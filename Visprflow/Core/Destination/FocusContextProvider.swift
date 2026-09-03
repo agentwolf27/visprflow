@@ -5,10 +5,11 @@ import Foundation
 /// Reads what is focused right now: the app, its window title, the browser address, and the
 /// command running inside a terminal.
 ///
-/// Everything here is best-effort. A missing piece degrades the destination guess rather than
-/// failing the dictation, because inserting slightly under-edited text is always better than
-/// inserting nothing.
-@MainActor
+/// Split into two halves on purpose. `frontmost()` is cheap and safe to call from inside the
+/// event-tap callback. `enrich(_:)` shells out to `ps`, `lsof`, `git` and AppleScript, none of
+/// which may run on that callback: macOS disables an event tap whose callback is slow, and a
+/// disabled tap loses the key-up and throws the dictation away. So the slow half runs off the
+/// latency path while the user is still speaking, and is joined only when the transcript is ready.
 enum FocusContextProvider {
     /// AppleScript to read the front tab's address, per browser family.
     private static let browserScripts: [String: String] = [
@@ -21,35 +22,45 @@ enum FocusContextProvider {
         "com.vivaldi.Vivaldi": "tell application \"Vivaldi\" to return URL of active tab of front window",
     ]
 
-    /// Snapshot of the focused window. Call on key-down, before the overlay appears.
-    static func current() -> FocusContext {
+    /// The cheap half: bundle identifier and secure-input state, both in-memory lookups.
+    /// Safe to call synchronously from the event-tap callback.
+    @MainActor
+    static func frontmost() -> FocusContext {
         guard let app = NSWorkspace.shared.frontmostApplication else {
             return FocusContext(isSecureInput: SecureInput.isActive)
         }
-        let bundle = app.bundleIdentifier
-
-        var context = FocusContext(
-            bundleIdentifier: bundle,
-            windowTitle: windowTitle(pid: app.processIdentifier),
+        return FocusContext(
+            bundleIdentifier: app.bundleIdentifier,
+            processIdentifier: app.processIdentifier,
             isSecureInput: SecureInput.isActive
         )
+    }
 
-        if let bundle, DestinationResolver.terminalBundles.contains(bundle) {
-            if let foreground = ProcessTree.foreground(under: app.processIdentifier) {
-                context.terminalProcess = foreground.isAgent ? foreground.command : "shell"
+    /// The slow half: window title, terminal process, working directory and browser address.
+    /// Never call this from the event-tap callback.
+    static func enrich(_ context: FocusContext) -> FocusContext {
+        var result = context
+        guard let bundle = context.bundleIdentifier, let pid = context.processIdentifier else {
+            return result
+        }
+        result.windowTitle = windowTitle(pid: pid)
+
+        if DestinationResolver.terminalBundles.contains(bundle) {
+            if let foreground = ProcessTree.foreground(under: pid) {
+                result.terminalProcess = foreground.isAgent ? foreground.command : "shell"
                 // The working directory of whatever is running is the project the user means.
                 if let directory = WorkspaceProbe.workingDirectory(of: foreground.pid) {
-                    context.workspace = WorkspaceProbe.probe(directory: directory)
+                    result.workspace = WorkspaceProbe.probe(directory: directory)
                 }
             }
         }
-        if let bundle, DestinationResolver.browserBundles.contains(bundle) {
-            context.browserURL = browserURL(bundle: bundle)
+        if DestinationResolver.browserBundles.contains(bundle) {
+            result.browserURL = browserURL(bundle: bundle)
         }
-        return context
+        return result
     }
 
-    /// Title of the app's focused window, read through Accessibility.
+    /// Title of the app's focused window, read through Accessibility with a bounded timeout.
     static func windowTitle(pid: pid_t) -> String? {
         let application = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(application, 0.25)
@@ -66,17 +77,15 @@ enum FocusContextProvider {
         return title as? String
     }
 
-    /// Address of the front tab. Needs Automation permission, and returns nil without it
-    /// rather than prompting mid-dictation.
+    /// Address of the front tab.
+    ///
+    /// Run through `osascript` rather than `NSAppleScript` so it inherits a hard timeout:
+    /// `NSAppleScript` waits up to a minute by default, and a beachballed browser would
+    /// otherwise stall the dictation.
     static func browserURL(bundle: String) -> String? {
         guard let source = browserScripts[bundle] else { return nil }
-        var error: NSDictionary?
-        guard let script = NSAppleScript(source: source) else { return nil }
-        let result = script.executeAndReturnError(&error)
-        if let error {
-            Log.app.debug("Browser URL unavailable: \(String(describing: error), privacy: .public)")
-            return nil
-        }
-        return result.stringValue
+        let output = WorkspaceProbe.run("/usr/bin/osascript", ["-e", source], timeout: 1.0)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return output.isEmpty ? nil : output
     }
 }

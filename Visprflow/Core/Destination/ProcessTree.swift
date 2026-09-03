@@ -53,7 +53,7 @@ enum ProcessTree {
         while !queue.isEmpty, visited < 500 {
             let (entry, depth) = queue.removeFirst()
             visited += 1
-            let name = basename(entry.command)
+            let name = effectiveName(of: entry.command)
             if interestingCommands.contains(name) {
                 return Foreground(command: name, pid: entry.pid, isAgent: true)
             }
@@ -70,7 +70,9 @@ enum ProcessTree {
     static func snapshot() -> [Entry] {
         let process = Process()
         process.executableURL = URL(filePath: "/bin/ps")
-        process.arguments = ["-axo", "pid=,ppid=,comm="]
+        // `args=` rather than `comm=`: an npm-installed agent runs as `node .../claude`, and a
+        // Python one as `python3 .../aider`, so the executable name alone finds neither.
+        process.arguments = ["-axo", "pid=,ppid=,args="]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
@@ -102,5 +104,22 @@ enum ProcessTree {
     static func basename(_ command: String) -> String {
         let trimmed = command.hasPrefix("-") ? String(command.dropFirst()) : command
         return trimmed.split(separator: "/").last.map(String.init)?.lowercased() ?? trimmed.lowercased()
+    }
+
+    /// The command a process really is, looking past an interpreter to the script it runs.
+    /// `node /opt/homebrew/bin/claude` is Claude Code, not node.
+    static let interpreters: Set<String> = ["node", "bun", "deno", "python", "python3", "ruby", "uv"]
+
+    static func effectiveName(of args: String) -> String {
+        let words = args.split(separator: " ").map(String.init)
+        guard let first = words.first else { return "" }
+        let name = basename(first)
+        guard interpreters.contains(name) else { return name }
+        // Skip flags to find the script being run.
+        for word in words.dropFirst() where !word.hasPrefix("-") {
+            let candidate = basename(word)
+            if !candidate.isEmpty { return candidate }
+        }
+        return name
     }
 }

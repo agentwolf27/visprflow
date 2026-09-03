@@ -25,11 +25,17 @@ enum TriggerKey: String, Codable, Sendable, CaseIterable {
         }
     }
 
-    /// The modifier bit set while this key is held.
-    var flag: CGEventFlags {
+    /// Device-dependent bit for the right Option key. `.maskAlternate` is set while *either*
+    /// Option key is down, so using it would miss the release whenever the left one is held.
+    static let rightOptionBit: UInt64 = 0x040000
+
+    /// True when this key is currently held, given an event's flags.
+    func isHeld(in flags: CGEventFlags) -> Bool {
         switch self {
-        case .fn: .maskSecondaryFn
-        case .rightOption: .maskAlternate
+        case .fn:
+            flags.contains(.maskSecondaryFn)
+        case .rightOption:
+            flags.rawValue & Self.rightOptionBit != 0
         }
     }
 }
@@ -106,6 +112,17 @@ final class HotkeyMonitor: @unchecked Sendable {
         Log.hotkey.info("Event tap started for \(self.trigger.rawValue, privacy: .public)")
     }
 
+    deinit {
+        // The tap holds an unretained pointer to self and the run loop holds the source, so a
+        // monitor that is deallocated without stop() would leave a dangling callback.
+        if let tap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+        }
+        if let runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        }
+    }
+
     @MainActor
     func stop() {
         watchdog?.invalidate()
@@ -156,8 +173,9 @@ final class HotkeyMonitor: @unchecked Sendable {
             let trigger = self.trigger
             let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             guard keyCode == trigger.keyCode else { return true }
-            let isDown = event.flags.contains(trigger.flag)
-            let now = Date.timeIntervalSinceReferenceDate
+            let isDown = trigger.isHeld(in: event.flags)
+            // Monotonic: a clock step must not corrupt the press and double-tap windows.
+            let now = Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
             let modifiers = Self.modifiers(from: event.flags)
             deliver(gesture.withLock {
                 $0.handle(isDown

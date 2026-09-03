@@ -41,16 +41,18 @@ struct CompiledPrompt: Sendable, Equatable {
 
 /// Turns a transcript into the text that will be inserted.
 protocol PromptCompiling: Sendable {
-    /// - Parameter onDelta: partial text as it streams in, for the overlay.
+    /// - Parameter onPartial: the text produced *so far by the current attempt*, cumulative.
+    ///   When a guardrail rejects an attempt and the compiler retries, this restarts from the
+    ///   new attempt's first token rather than appending to the discarded one.
     func compile(
         _ request: CompileRequest,
-        onDelta: @escaping @Sendable (String) -> Void
+        onPartial: @escaping @Sendable (String) -> Void
     ) async throws -> CompiledPrompt
 }
 
 extension PromptCompiling {
     func compile(_ request: CompileRequest) async throws -> CompiledPrompt {
-        try await compile(request, onDelta: { _ in })
+        try await compile(request, onPartial: { _ in })
     }
 }
 
@@ -59,9 +61,9 @@ extension PromptCompiling {
 struct PassthroughCompiler: PromptCompiling {
     func compile(
         _ request: CompileRequest,
-        onDelta: @escaping @Sendable (String) -> Void
+        onPartial: @escaping @Sendable (String) -> Void
     ) async throws -> CompiledPrompt {
-        onDelta(request.transcript)
+        onPartial(request.transcript)
         return CompiledPrompt(text: request.transcript, level: .verbatim)
     }
 }

@@ -115,6 +115,24 @@ final class ProcessTreeTests: XCTestCase {
         XCTAssertNil(ProcessTree.agentCommand(under: 999, entries: table))
     }
 
+    /// Regression: npm installs Claude Code as `node .../claude`, so matching the executable
+    /// name alone would see only `node` and treat the terminal as a plain shell.
+    func testFindsAnAgentRunningUnderAnInterpreter() {
+        let npmTable: [ProcessTree.Entry] = [
+            .init(pid: 100, parent: 1, command: "/Applications/iTerm.app/Contents/MacOS/iTerm2"),
+            .init(pid: 200, parent: 100, command: "-zsh"),
+            .init(pid: 300, parent: 200, command: "node /Users/x/.nvm/versions/node/v22/bin/claude"),
+        ]
+        XCTAssertEqual(ProcessTree.agentCommand(under: 100, entries: npmTable), "claude")
+    }
+
+    func testEffectiveNameLooksPastAnInterpreter() {
+        XCTAssertEqual(ProcessTree.effectiveName(of: "node /opt/homebrew/bin/claude"), "claude")
+        XCTAssertEqual(ProcessTree.effectiveName(of: "python3 -u /usr/local/bin/aider"), "aider")
+        XCTAssertEqual(ProcessTree.effectiveName(of: "/bin/zsh"), "zsh")
+        XCTAssertEqual(ProcessTree.effectiveName(of: "node"), "node", "an interpreter alone is itself")
+    }
+
     func testBasenameStripsPathsAndLoginShellDashes() {
         XCTAssertEqual(ProcessTree.basename("/opt/homebrew/bin/claude"), "claude")
         XCTAssertEqual(ProcessTree.basename("-zsh"), "zsh")
@@ -124,13 +142,13 @@ final class ProcessTreeTests: XCTestCase {
     func testParsesPsOutput() {
         let output = """
           123    1 /bin/zsh
-          456  123 claude
+          456  123 claude --resume
         """
         let entries = ProcessTree.parse(output)
         XCTAssertEqual(entries.count, 2)
         XCTAssertEqual(entries[0].pid, 123)
         XCTAssertEqual(entries[1].parent, 123)
-        XCTAssertEqual(entries[1].command, "claude")
+        XCTAssertEqual(entries[1].command, "claude --resume", "arguments are kept whole")
     }
 
     func testParsingIgnoresMalformedLines() {

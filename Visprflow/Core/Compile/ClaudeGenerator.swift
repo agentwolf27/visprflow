@@ -44,14 +44,31 @@ struct ClaudeGenerator: TextGenerating {
         }
 
         var text = ""
+        var stopReason: String?
         for try await line in bytes.lines {
             try Task.checkCancellation()
             guard line.hasPrefix("data:") else { continue }
             let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
             guard !payload.isEmpty, payload != "[DONE]" else { continue }
+
+            // An error can arrive *after* the 200, for instance when the service is
+            // overloaded. Ignoring it would return a half-written rewrite as if it were
+            // finished, and paste that into the user's document.
+            if let failure = Self.streamError(in: payload) {
+                throw GenerationError.http(status: 200, message: failure)
+            }
+            if let reason = Self.stopReason(in: payload) {
+                stopReason = reason
+            }
             guard let delta = Self.textDelta(in: payload) else { continue }
             text += delta
             onDelta(delta)
+        }
+
+        // A response cut off at max_tokens is shorter, not longer, so no length check can
+        // catch it. Treat anything but a clean finish as a failure.
+        if let stopReason, stopReason != "end_turn", stopReason != "stop_sequence" {
+            throw GenerationError.http(status: 200, message: "the model stopped early (\(stopReason))")
         }
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -102,6 +119,26 @@ struct ClaudeGenerator: TextGenerating {
         // Only plain text deltas matter; thinking deltas are off and would be ignored anyway.
         guard let type = delta["type"] as? String, type == "text_delta" else { return nil }
         return delta["text"] as? String
+    }
+
+    /// An error event delivered inside an otherwise successful stream.
+    static func streamError(in payload: String) -> String? {
+        guard let data = payload.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["type"] as? String == "error"
+        else { return nil }
+        let error = object["error"] as? [String: Any]
+        return (error?["message"] as? String) ?? "the model reported an error"
+    }
+
+    /// Why generation stopped, carried on the `message_delta` event.
+    static func stopReason(in payload: String) -> String? {
+        guard let data = payload.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["type"] as? String == "message_delta",
+              let delta = object["delta"] as? [String: Any]
+        else { return nil }
+        return delta["stop_reason"] as? String
     }
 
     /// Extracts a readable message from an error body, which may or may not be JSON.

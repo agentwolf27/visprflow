@@ -20,7 +20,7 @@ struct Compiler: PromptCompiling {
 
     func compile(
         _ request: CompileRequest,
-        onDelta: @escaping @Sendable (String) -> Void
+        onPartial: @escaping @Sendable (String) -> Void
     ) async throws -> CompiledPrompt {
         let transcript = request.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !transcript.isEmpty else {
@@ -28,7 +28,7 @@ struct Compiler: PromptCompiling {
         }
         // Verbatim never reaches a model: that is the whole promise of the level.
         guard request.level != .verbatim else {
-            onDelta(transcript)
+            onPartial(transcript)
             return CompiledPrompt(text: transcript, level: .verbatim)
         }
 
@@ -44,9 +44,14 @@ struct Compiler: PromptCompiling {
                 maxTokens: SystemPrompt.maxTokens(for: transcript)
             )
 
+            // Each attempt accumulates its own text, so a rejected attempt's partial output
+            // is replaced in the overlay rather than appended to.
+            let accumulator = PartialText()
             let output: String
             do {
-                output = try await generator.generate(generation, onDelta: onDelta)
+                output = try await generator.generate(generation) { delta in
+                    onPartial(accumulator.append(delta))
+                }
             } catch is CancellationError {
                 throw GenerationError.cancelled
             }
@@ -80,7 +85,7 @@ struct Compiler: PromptCompiling {
 
         // The floor: what the user said. Never wrong, only unpolished.
         Log.compile.info("Falling back to the raw transcript")
-        onDelta(transcript)
+        onPartial(transcript)
         return CompiledPrompt(
             text: transcript,
             level: .verbatim,
@@ -88,5 +93,18 @@ struct Compiler: PromptCompiling {
             guardrailReason: firstRejection,
             requestJSON: nil
         )
+    }
+}
+
+
+/// Accumulates streamed deltas for one attempt.
+private final class PartialText: @unchecked Sendable {
+    private let lock = NSLock()
+    private var text = ""
+
+    func append(_ delta: String) -> String {
+        lock.lock(); defer { lock.unlock() }
+        text += delta
+        return text
     }
 }

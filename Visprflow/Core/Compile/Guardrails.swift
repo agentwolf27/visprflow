@@ -50,19 +50,37 @@ struct Guardrails: Sendable {
 
     /// Finds an identifier or path in the output that the speaker never said.
     ///
-    /// Spoken "src slash auth" legitimately becomes `src/auth`, so a literal substring check
-    /// would reject good output. Instead each identifier is broken into its word parts and every
-    /// part has to appear in the transcript or the vocabulary.
+    /// Two rules, because either one alone is wrong:
+    ///
+    /// - **Every part is a known word.** Spoken "src slash auth" legitimately becomes
+    ///   `src/auth`, so a literal substring check would reject good output.
+    /// - **The squashed form appears in the transcript.** Speech recognition writes compound
+    ///   product names as separate lowercase words, so "can you add github actions" must let
+    ///   the model produce `GitHub`. Splitting on the capital gives "git" and "hub", neither
+    ///   of which was said, so rule one alone rejects half of ordinary technical vocabulary:
+    ///   GitHub, TypeScript, JavaScript, iPhone, Node.js.
+    ///
+    /// Only when both fail is the identifier treated as invented.
     func inventedIdentifier(in output: String, transcript: String, vocabulary: [String]) -> String? {
         let known = wordSet(transcript).union(vocabulary.flatMap { wordParts($0) })
+        let squashedSource = Self.squash(transcript) + " " + vocabulary.map(Self.squash).joined(separator: " ")
+
         for candidate in Self.identifierLikeTokens(in: output) {
             let parts = wordParts(candidate).filter { $0.count >= minimumPartLength }
             guard !parts.isEmpty else { continue }
-            if !parts.allSatisfy({ known.contains($0) }) {
-                return candidate
-            }
+            if parts.allSatisfy({ known.contains($0) }) { continue }
+
+            let squashed = wordParts(candidate).joined()
+            if !squashed.isEmpty, squashedSource.contains(squashed) { continue }
+
+            return candidate
         }
         return nil
+    }
+
+    /// Lowercased text with every separator removed, so "type script" and "TypeScript" match.
+    static func squash(_ text: String) -> String {
+        text.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
     /// Tokens that look like code rather than prose: paths, dotted names, snake_case,

@@ -4,6 +4,8 @@ import Foundation
 /// can be tested exhaustively without a running app.
 struct FocusContext: Sendable, Equatable {
     var bundleIdentifier: String?
+    /// Process id of the focused app, used to find what is running inside a terminal.
+    var processIdentifier: pid_t?
     var windowTitle: String?
     /// Address of the front tab, when the focused app is a browser.
     var browserURL: String?
@@ -101,10 +103,9 @@ enum DestinationResolver {
             return resolveTerminal(context)
         }
         if editorBundles.contains(bundle) {
-            // Cursor and friends: the chat pane is the common dictation target.
-            return bundle == "com.microsoft.VSCode" || bundle == "com.visualstudio.code.oss"
-                ? .cursor
-                : .cursor
+            // Cursor, VS Code, Zed and Windsurf all put an agent chat pane beside the editor,
+            // and that pane is what people dictate into.
+            return .cursor
         }
         if browserBundles.contains(bundle) {
             return resolveBrowser(context)

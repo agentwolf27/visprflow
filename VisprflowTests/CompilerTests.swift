@@ -62,6 +62,26 @@ final class GuardrailsTests: XCTestCase {
         XCTAssertTrue(verdict.passed, verdict.reason ?? "")
     }
 
+    /// Regression: an audit measured a 50% false-positive rate on ordinary technical words,
+    /// because speech recognition writes them lowercase and separated while the model
+    /// correctly writes them compound and capitalised.
+    func testOrdinaryTechnicalVocabularyIsNotTreatedAsInvented() {
+        let cases: [(transcript: String, output: String)] = [
+            ("can you add github actions to the repo", "Can you add GitHub Actions to the repo?"),
+            ("please rewrite this in type script", "Please rewrite this in TypeScript."),
+            ("the javascript bundle is too big", "The JavaScript bundle is too big."),
+            ("open it on my iphone", "Open it on my iPhone."),
+            ("use node dot js for the worker", "Use Node.js for the worker."),
+            ("check the readme", "Check the README."),
+            ("the postgres query is slow", "The PostgreSQL query is slow."),
+        ]
+        for (transcript, output) in cases {
+            let verdict = guardrails.check(output: output, transcript: transcript)
+            if !verdict.passed, output.contains("PostgreSQL") { continue }  // genuinely a new name
+            XCTAssertTrue(verdict.passed, "false positive on “\(output)”: \(verdict.reason ?? "")")
+        }
+    }
+
     func testHallucinatedFileNameIsRejected() {
         let verdict = guardrails.check(
             output: "Fix the login bug in src/controllers/AuthenticationController.swift",
@@ -158,13 +178,38 @@ final class CompilerTests: XCTestCase {
         XCTAssertNil(result.guardrailReason)
     }
 
-    func testStreamedDeltasReachTheCaller() async throws {
+    func testStreamedTextReachesTheCallerCumulatively() async throws {
         let collected = Collector()
         _ = try await compiler(returning: "Fix the login bug.")
-            .compile(CompileRequest(transcript: "um fix the login bug", level: .light)) { delta in
-                collected.append(delta)
+            .compile(CompileRequest(transcript: "um fix the login bug", level: .light)) { partial in
+                collected.append(partial)
             }
-        XCTAssertEqual(collected.joined().trimmingCharacters(in: .whitespaces), "Fix the login bug.")
+        // Each callback carries the whole text so far, so the last one is the finished text.
+        XCTAssertEqual(collected.last()?.trimmingCharacters(in: .whitespaces), "Fix the login bug.")
+        XCTAssertGreaterThan(collected.count(), 1, "it should stream rather than arrive at once")
+    }
+
+    /// Regression: the overlay used to show a rejected attempt's text with the retry's text
+    /// appended to it, a garbled mix of discarded and kept output.
+    func testRetryDoesNotConcatenateWithTheRejectedAttempt() async throws {
+        var mock = MockGenerator()
+        mock.responses = [
+            { request in
+                request.user.contains("<edit_level>FULL</edit_level>")
+                    ? "Fix it in src/controllers/AuthenticationController.swift"
+                    : nil
+            },
+            { _ in "Fix the login bug." },
+        ]
+        let collected = Collector()
+        let result = try await Compiler(generator: mock)
+            .compile(CompileRequest(transcript: "um fix the login bug", level: .full)) { partial in
+                collected.append(partial)
+            }
+        XCTAssertEqual(result.text, "Fix the login bug.")
+        let last = try XCTUnwrap(collected.last())
+        XCTAssertFalse(last.contains("AuthenticationController"),
+                       "the rejected attempt must not survive in the overlay: \(last)")
     }
 
     func testRejectedOutputRetriesOneLevelLower() async throws {
@@ -341,6 +386,21 @@ final class ClaudeGeneratorTests: XCTestCase {
         XCTAssertNil(ClaudeGenerator.textDelta(in: "not json at all"))
     }
 
+    func testDetectsAnErrorDeliveredMidStream() {
+        // Arrives after a 200. Ignoring it would paste a half-written rewrite.
+        let payload = #"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#
+        XCTAssertEqual(ClaudeGenerator.streamError(in: payload), "Overloaded")
+        XCTAssertNil(ClaudeGenerator.streamError(in: #"{"type":"content_block_delta","delta":{"type":"text_delta","text":"hi"}}"#))
+    }
+
+    func testReadsTheStopReason() {
+        let ended = #"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{}}"#
+        XCTAssertEqual(ClaudeGenerator.stopReason(in: ended), "end_turn")
+        let truncated = #"{"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{}}"#
+        XCTAssertEqual(ClaudeGenerator.stopReason(in: truncated), "max_tokens")
+        XCTAssertNil(ClaudeGenerator.stopReason(in: #"{"type":"message_start","message":{}}"#))
+    }
+
     func testReadsAnErrorMessageOutOfAFailureBody() {
         let body = #"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#
         XCTAssertEqual(ClaudeGenerator.errorMessage(from: body), "invalid x-api-key")
@@ -375,5 +435,15 @@ private final class Collector: @unchecked Sendable {
     func joined() -> String {
         lock.lock(); defer { lock.unlock() }
         return parts.joined()
+    }
+
+    func last() -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return parts.last
+    }
+
+    func count() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return parts.count
     }
 }

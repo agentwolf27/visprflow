@@ -29,6 +29,8 @@ final class DictationController {
     @ObservationIgnored private var meterTimer: Timer?
     @ObservationIgnored private var dismissTask: Task<Void, Never>?
     @ObservationIgnored private var activeWork: Task<Void, Never>?
+    @ObservationIgnored private var previewTimeout: Task<Void, Never>?
+    @ObservationIgnored private var contextTask: Task<FocusContext, Never>?
     @ObservationIgnored private var capturedContext = FocusContext.unknown
     @ObservationIgnored private let vocabulary = VocabularyCache()
     /// The dictation waiting for the user to press Return.
@@ -38,6 +40,8 @@ final class DictationController {
         var transcript: Transcript
         var compiled: CompiledPrompt
         var destination: Destination
+        /// The app this text was compiled for, so it is never pasted somewhere else.
+        var bundleIdentifier: String?
     }
 
     /// How long hands-free recording tolerates silence before stopping on its own.
@@ -140,13 +144,25 @@ final class DictationController {
 
     private func beginCapture() {
         dismissTask?.cancel()
+        // Starting a new dictation abandons the previous one. Without this the old one runs
+        // to completion and inserts its text while this one is still recording.
+        activeWork?.cancel()
+        activeWork = nil
         clearPending()
         trace = Trace()
         trace.mark(.keyDown)
         startedAt = Date()
         lastError = nil
-        // Sample the focused window now, before the overlay is on screen.
-        capturedContext = FocusContextProvider.current()
+        // Only the cheap half here: this runs inside the event-tap callback, and a slow
+        // callback makes macOS disable the tap, which loses the key-up and the dictation.
+        let frontmost = FocusContextProvider.frontmost()
+        capturedContext = frontmost
+        // The expensive half (ps, lsof, git, AppleScript) runs while the user is still
+        // speaking and is joined only when the transcript is ready.
+        contextTask?.cancel()
+        contextTask = Task.detached(priority: .userInitiated) {
+            FocusContextProvider.enrich(frontmost)
+        }
 
         do {
             try capture.start()
@@ -176,12 +192,12 @@ final class DictationController {
     }
 
     private func run(samples: [Float], modifiers: GestureModifiers) async {
-        let context = capturedContext
-        let destination = settings.apply(to: DestinationResolver.resolve(context))
-
         do {
+            // Transcription and the context probe overlap; both are needed before compiling.
             let transcript = try await transcriber.transcribe(samples: samples, hints: .none)
             trace.mark(.transcriptReady)
+            let context = await contextTask?.value ?? capturedContext
+            let destination = settings.apply(to: DestinationResolver.resolve(context))
 
             guard !transcript.isEmpty else {
                 show(.failed(message: "Nothing was said"))
@@ -192,13 +208,20 @@ final class DictationController {
             let compiled = try await compile(
                 transcript: transcript.text,
                 destination: destination,
+                context: context,
                 modifiers: modifiers
             )
             trace.mark(.compileDone)
 
             if destination.requiresPreview {
-                pending = Pending(transcript: transcript, compiled: compiled, destination: destination)
+                pending = Pending(
+                    transcript: transcript,
+                    compiled: compiled,
+                    destination: destination,
+                    bundleIdentifier: context.bundleIdentifier
+                )
                 monitor.setPreviewMode(true)
+                startPreviewTimeout()
                 trace.mark(.previewShown)
                 show(.ready(text: compiled.text, level: compiled.level, destination: destination.displayName))
                 Log.timing.info("Preview ready: \(self.trace.summary(), privacy: .public)")
@@ -207,7 +230,8 @@ final class DictationController {
             }
 
         } catch is CancellationError {
-            hide(after: 0)
+            // Superseded by a newer dictation, which now owns the overlay. Touching it here
+            // would hide the overlay of the recording that is still in progress.
         } catch {
             report(error)
         }
@@ -217,6 +241,7 @@ final class DictationController {
     private func compile(
         transcript: String,
         destination: Destination,
+        context: FocusContext,
         modifiers: GestureModifiers
     ) async throws -> CompiledPrompt {
         // Shift with the trigger means "insert exactly what I said"; Control forces a full
@@ -239,7 +264,8 @@ final class DictationController {
         return try await runCompiler(
             transcript: decision.transcript,
             level: decision.level,
-            destination: destination
+            destination: destination,
+            workspace: context.workspace
         )
     }
 
@@ -247,13 +273,13 @@ final class DictationController {
     private func runCompiler(
         transcript: String,
         level: EditLevel,
-        destination: Destination
+        destination: Destination,
+        workspace: WorkspaceContext
     ) async throws -> CompiledPrompt {
-        let box = StreamBox()
         // The project's own words, so "aut midway" can come back as "auth middleware".
         // Spelling authority only: the compiler is told never to introduce a term from here
         // that the speaker did not say.
-        let terms = vocabulary.terms(for: capturedContext.workspace)
+        let terms = vocabulary.terms(for: workspace)
         return try await compiler.compile(
             CompileRequest(
                 transcript: transcript,
@@ -262,8 +288,7 @@ final class DictationController {
                 instructions: destination.instructions,
                 vocabulary: terms
             )
-        ) { [weak self] delta in
-            let partial = box.append(delta)
+        ) { [weak self] partial in
             Task { @MainActor in
                 guard let self, case .compiling = self.hud else { return }
                 self.hud = .compiling(partial: partial)
@@ -297,6 +322,15 @@ final class DictationController {
         switch key {
         case .insert:
             clearPending()
+            // The compiled text was shaped for a particular app. If focus moved while the
+            // preview was up, inserting it now would paste a prompt into the wrong window.
+            let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            guard front == nil || pending.bundleIdentifier == nil || front == pending.bundleIdentifier else {
+                Log.insert.info("Focus moved while the preview was up; not inserting")
+                show(.failed(message: "Focus moved, so nothing was inserted"))
+                hide(after: 2.0)
+                return
+            }
             Task { [weak self] in
                 guard let self else { return }
                 do {
@@ -345,7 +379,8 @@ final class DictationController {
                     compiled = try await self.runCompiler(
                         transcript: pending.transcript.text,
                         level: level,
-                        destination: pending.destination
+                        destination: pending.destination,
+                        workspace: self.capturedContext.workspace
                     )
                 }
                 var updated = pending
@@ -366,14 +401,38 @@ final class DictationController {
 
     private func clearPending() {
         pending = nil
+        previewTimeout?.cancel()
+        previewTimeout = nil
         monitor.setPreviewMode(false)
     }
+
+    /// A preview that is never answered releases itself, so the preview keys cannot be held
+    /// hostage by a window the user walked away from.
+    private func startPreviewTimeout() {
+        previewTimeout?.cancel()
+        previewTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.previewLifetime))
+            guard !Task.isCancelled, let self, self.pending != nil else { return }
+            Log.app.info("Preview expired without an answer; releasing the preview keys")
+            self.clearPending()
+            self.show(.failed(message: "Preview expired"))
+            self.hide(after: 1.0)
+        }
+    }
+
+    /// How long a compiled prompt waits for Return before releasing the keyboard.
+    private static let previewLifetime: TimeInterval = 90
 
     // MARK: Errors and history
 
     private func report(_ error: any Error) {
         let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         lastError = message
+        // Critical: an error while a preview is up must release the preview keys. Leaving
+        // them captured swallows Return, Tab, Escape and R across every app, with no visible
+        // overlay explaining why, and the user's natural recovery (pressing Return) would
+        // paste stale text into whatever is focused now.
+        clearPending()
         show(.failed(message: message))
         // Secure input leaves the transcript on the clipboard, so that message needs longer.
         hide(after: error is InsertionError ? 3.5 : 2.5)
@@ -426,15 +485,18 @@ final class DictationController {
         panel?.present()
     }
 
+    /// Hides the overlay. Always releases the preview keys first: an invisible overlay must
+    /// never still be capturing Return, Tab, Escape and R.
     private func hide(after delay: TimeInterval) {
         dismissTask?.cancel()
         dismissTask = Task { [weak self] in
             if delay > 0 {
                 try? await Task.sleep(for: .seconds(delay))
             }
-            guard !Task.isCancelled else { return }
-            self?.hud = .hidden
-            self?.panel?.dismiss()
+            guard !Task.isCancelled, let self else { return }
+            self.clearPending()
+            self.hud = .hidden
+            self.panel?.dismiss()
         }
     }
 
@@ -462,18 +524,6 @@ final class DictationController {
 /// Weak holder that lets the hotkey callback reach the controller owning the monitor.
 private final class ControllerBox: @unchecked Sendable {
     weak var controller: DictationController?
-}
-
-/// Accumulates streamed deltas arriving on a `@Sendable` callback.
-private final class StreamBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var text = ""
-
-    func append(_ delta: String) -> String {
-        lock.lock(); defer { lock.unlock() }
-        text += delta
-        return text
-    }
 }
 
 /// Bridges the observable controller into the panel's SwiftUI content.

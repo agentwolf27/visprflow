@@ -118,7 +118,7 @@ final class Inserter {
         // Clipboard managers honour these markers and skip the entry entirely.
         pasteboard.setString("", forType: Self.transientType)
 
-        try postPasteChord(chord)
+        try await postPasteChord(chord)
         let postedAt = ContinuousClock.now
 
         // Wait for the target app to actually read our data, then restore.
@@ -129,7 +129,14 @@ final class Inserter {
 
             switch policy.decide(elapsed: elapsed, lastReceipt: lastReceipt, pasteboardChanged: changed) {
             case let .wait(interval):
-                try? await Task.sleep(for: .seconds(interval))
+                // `try await` rather than `try?`: swallowing cancellation here would turn the
+                // loop into a busy-spin on the main actor for the rest of the maximum wait.
+                do {
+                    try await Task.sleep(for: .seconds(interval))
+                } catch {
+                    snapshot.restore(to: pasteboard)
+                    return
+                }
             case .abandon:
                 Log.insert.info("Pasteboard changed under us; leaving the newer contents in place")
                 return
@@ -159,7 +166,7 @@ final class Inserter {
         Log.insert.info("Pasting with a modifier still held; the chord sets its own flags explicitly")
     }
 
-    private func postPasteChord(_ chord: PasteChord) throws {
+    private func postPasteChord(_ chord: PasteChord) async throws {
         // A private source does not inherit the hardware modifier state the way
         // `.combinedSessionState` does, so the chord is exactly what we set below.
         guard let source = CGEventSource(stateID: .privateState) else {
@@ -190,9 +197,9 @@ final class Inserter {
         down.flags = flags
         up.flags = flags
         down.post(tap: .cgAnnotatedSessionEventTap)
-        // Some Electron and Java apps drop a chord whose down and up land in the same
-        // run loop turn, so leave a gap between them.
-        usleep(8_000)
+        // Some Electron and Java apps drop a chord whose down and up land in the same run
+        // loop turn, so leave a gap. Async rather than usleep: this is the main actor.
+        try? await Task.sleep(for: .milliseconds(8))
         up.post(tap: .cgAnnotatedSessionEventTap)
     }
 
@@ -247,19 +254,17 @@ private final class PasteOwner: NSObject, NSPasteboardTypeOwner {
 
 /// Everything the pasteboard held, so it can be put back byte for byte.
 struct PasteboardSnapshot {
-    private let items: [[NSPasteboard.PasteboardType: Data]]
+    /// An ordered list per item: readers pick a flavour by declared order, so restoring in
+    /// dictionary order could hand back RTF where the original handed back plain text.
+    private let items: [[(type: NSPasteboard.PasteboardType, data: Data)]]
 
     var isEmpty: Bool { items.isEmpty }
 
     static func capture(from pasteboard: NSPasteboard) -> PasteboardSnapshot {
         let items = (pasteboard.pasteboardItems ?? []).map { item in
-            var contents: [NSPasteboard.PasteboardType: Data] = [:]
-            for type in item.types {
-                if let data = item.data(forType: type) {
-                    contents[type] = data
-                }
+            item.types.compactMap { type in
+                item.data(forType: type).map { (type: type, data: $0) }
             }
-            return contents
         }
         return PasteboardSnapshot(items: items)
     }
@@ -270,8 +275,8 @@ struct PasteboardSnapshot {
         guard !items.isEmpty else { return }
         let restored = items.map { contents -> NSPasteboardItem in
             let item = NSPasteboardItem()
-            for (type, data) in contents {
-                item.setData(data, forType: type)
+            for entry in contents {
+                item.setData(entry.data, forType: entry.type)
             }
             return item
         }
