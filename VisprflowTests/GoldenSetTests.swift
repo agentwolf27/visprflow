@@ -32,6 +32,29 @@ final class GoldenSetTests: XCTestCase {
         }
     }
 
+    /// The audit noted that the golden set checked its own fixtures but never ran them
+    /// through the guardrails, so the invention check had no golden coverage at all.
+    func testEveryExpectedOutputPassesTheRealGuardrails() throws {
+        let guardrails = Guardrails.default
+        for item in try GoldenCase.loadAll(from: goldenDirectory()) {
+            let verdict = guardrails.check(output: item.expected, transcript: item.transcript)
+            XCTAssertTrue(verdict.passed, "\(item.id) would be rejected: \(verdict.reason ?? "")")
+        }
+    }
+
+    /// The mirror image: output that shows a known failure mode must be caught for every
+    /// fixture, so the guardrails are not silently passing everything.
+    func testGuardrailsRejectAnsweringForEveryFixture() throws {
+        let guardrails = Guardrails.default
+        for item in try GoldenCase.loadAll(from: goldenDirectory()) where item.level != .verbatim {
+            let verdict = guardrails.check(
+                output: "Sure! Here is what I think about that.",
+                transcript: item.transcript
+            )
+            XCTAssertFalse(verdict.passed, "\(item.id) should have rejected an answer")
+        }
+    }
+
     func testAnswerDetectorCatchesTheAssistantReflex() {
         XCTAssertTrue(OutputChecks.looksLikeAnswer("Sure! A mutex is..."))
         XCTAssertTrue(OutputChecks.looksLikeAnswer("Here's the cleaned up version:"))
