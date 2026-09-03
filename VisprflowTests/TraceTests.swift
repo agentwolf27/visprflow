@@ -19,15 +19,15 @@ final class TraceTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(keyUpToInserted, keyUpToTranscript)
     }
 
-    func testRemarkingReplacesEarlierMark() {
+    func testRemarkingReplacesEarlierMark() throws {
         var trace = Trace()
         trace.mark(.keyUp)
-        let first = trace.offset(of: .keyUp)
+        let first = try XCTUnwrap(trace.offset(of: .keyUp))
+        usleep(2_000)
         trace.mark(.keyUp)
-        let second = trace.offset(of: .keyUp)
+        let second = try XCTUnwrap(trace.offset(of: .keyUp))
         XCTAssertEqual(trace.marks.count, 1)
-        XCTAssertNotNil(first)
-        XCTAssertNotNil(second)
+        XCTAssertGreaterThan(second, first, "the mark must move forward, not keep the old offset")
     }
 
     func testMissingStageYieldsNil() {

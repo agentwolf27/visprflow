@@ -48,7 +48,11 @@ enum Keychain {
     static func set(_ value: String, for key: SecretKey) throws {
         let data = Data(value.utf8)
         let query = baseQuery(for: key)
-        let update: [String: Any] = [kSecValueData as String: data]
+        // Set accessibility on update as well, so an item written by an older build is corrected.
+        let update: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
+        ]
 
         let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
         switch status {

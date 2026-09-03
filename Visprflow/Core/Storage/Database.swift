@@ -1,13 +1,19 @@
 import Foundation
 import GRDB
+import Synchronization
 
 /// Local history store. Lives in ~/Library/Application Support/Visprflow/visprflow.sqlite.
 /// Every dictation row carries the exact request that left the machine, so the privacy
 /// contract in the plan is inspectable rather than promised.
 enum Database {
-    @MainActor private(set) static var queue: DatabaseQueue?
+    /// `DatabaseQueue` is already thread-safe and Sendable. Holding it off the main actor keeps
+    /// history writes from the audio and compile pipeline off the latency path.
+    private static let storage = Mutex<DatabaseQueue?>(nil)
 
-    @MainActor
+    static var queue: DatabaseQueue? {
+        storage.withLock { $0 }
+    }
+
     static func open() throws {
         let support = try FileManager.default.url(
             for: .applicationSupportDirectory,
@@ -18,7 +24,10 @@ enum Database {
         let directory = support.appending(path: "Visprflow", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let file = directory.appending(path: "visprflow.sqlite")
-        queue = try makeQueue(path: file.path)
+        let opened = try makeQueue(path: file.path)
+        storage.withLock { existing in
+            existing = opened
+        }
         Log.db.info("Database opened at \(file.path, privacy: .public)")
     }
 
@@ -50,7 +59,13 @@ enum Database {
                 t.column("offsetMs", .double).notNull()
                 t.column("sinceLastMs", .double).notNull()
             }
-            try db.create(index: "stageTiming_dictationId", on: "stageTiming", columns: ["dictationId"])
+            // Unique so a retried write updates rather than silently duplicating timings.
+            try db.create(
+                index: "stageTiming_dictation_stage",
+                on: "stageTiming",
+                columns: ["dictationId", "stage"],
+                unique: true
+            )
         }
         return migrator
     }

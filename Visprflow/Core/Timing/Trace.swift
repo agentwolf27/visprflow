@@ -58,9 +58,19 @@ struct Trace: Sendable {
         }
     }
 
+    /// Records a stage at an exact offset. Tests use this to assert latency budgets without
+    /// sleeping; production code uses `mark(_:)`.
+    mutating func mark(_ stage: Stage, offset: Duration) {
+        marks.removeAll { $0.stage == stage }
+        marks.append(Mark(stage: stage, offset: offset))
+        marks.sort { $0.offset < $1.offset }
+    }
+
     /// One-line summary such as `keyUp+0ms transcriptReady+84ms inserted+212ms`.
+    /// Formatted with `String(format:)` rather than `.formatted`, which is locale-aware and
+    /// would render `1.235ms` for 1234.5 in a German locale.
     func summary() -> String {
-        marks.map { "\($0.stage.rawValue)+\(Trace.milliseconds($0.offset).formatted(.number.precision(.fractionLength(0))))ms" }
+        marks.map { String(format: "%@+%.0fms", $0.stage.rawValue, Trace.milliseconds($0.offset)) }
             .joined(separator: " ")
     }
 

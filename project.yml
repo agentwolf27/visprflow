@@ -13,12 +13,15 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     MACOSX_DEPLOYMENT_TARGET: "15.0"
-    # Ad-hoc signing until a Developer ID exists (phase 5). A self-signed certificate keeps
-    # the Accessibility grant stable across rebuilds; see README.
+    # Ad-hoc signing until a Developer ID exists (phase 5). Note that ad-hoc means TCC pins
+    # the app by cdhash, so Accessibility and Input Monitoring must be re-granted after a
+    # rebuild. The README explains how to swap in a self-signed identity to avoid that.
+    # The hardened runtime is deliberately NOT set here: `codesign --sign -` does not apply
+    # `--options=runtime`, so claiming it would be false comfort. Phase 5 turns it on with
+    # a real Developer ID.
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: "-"
     DEVELOPMENT_TEAM: ""
-    ENABLE_HARDENED_RUNTIME: YES
     SWIFT_STRICT_CONCURRENCY: complete
     ENABLE_USER_SCRIPT_SANDBOXING: YES
 
