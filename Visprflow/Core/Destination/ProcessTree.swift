@@ -17,8 +17,24 @@ enum ProcessTree {
     /// Ordered so a more specific match wins over a shell.
     static let interestingCommands: Set<String> = DestinationResolver.agentProcesses
 
-    /// The most relevant descendant command of `pid`, or nil when only shells are running.
+    /// What is running inside a terminal: the agent if there is one, otherwise the deepest
+    /// shell, whose working directory is the one the user is looking at.
+    struct Foreground: Sendable, Equatable {
+        var command: String
+        var pid: Int32
+        var isAgent: Bool
+    }
+
+    static let shellCommands: Set<String> = ["zsh", "bash", "fish", "sh", "nu", "tcsh", "ksh"]
+
+    /// The agent running under `pid`, or nil when only shells are running.
     static func agentCommand(under pid: Int32, entries: [Entry]? = nil) -> String? {
+        let result = foreground(under: pid, entries: entries)
+        return result?.isAgent == true ? result?.command : nil
+    }
+
+    /// Walks the descendants of `pid`, preferring an agent and falling back to the deepest shell.
+    static func foreground(under pid: Int32, entries: [Entry]? = nil) -> Foreground? {
         let table = entries ?? snapshot()
         guard !table.isEmpty else { return nil }
 
@@ -27,20 +43,27 @@ enum ProcessTree {
             childrenByParent[entry.parent, default: []].append(entry)
         }
 
-        // Breadth-first through the descendants, with a bound so a pathological tree
-        // cannot stall the dictation pipeline.
-        var queue = childrenByParent[pid] ?? []
+        // Breadth-first through the descendants, with a bound so a pathological tree cannot
+        // stall the dictation pipeline.
+        var queue = (childrenByParent[pid] ?? []).map { (entry: $0, depth: 0) }
+        var deepestShell: Foreground?
+        var deepestDepth = -1
         var visited = 0
+
         while !queue.isEmpty, visited < 500 {
-            let entry = queue.removeFirst()
+            let (entry, depth) = queue.removeFirst()
             visited += 1
             let name = basename(entry.command)
             if interestingCommands.contains(name) {
-                return name
+                return Foreground(command: name, pid: entry.pid, isAgent: true)
             }
-            queue.append(contentsOf: childrenByParent[entry.pid] ?? [])
+            if shellCommands.contains(name), depth > deepestDepth {
+                deepestDepth = depth
+                deepestShell = Foreground(command: name, pid: entry.pid, isAgent: false)
+            }
+            queue.append(contentsOf: (childrenByParent[entry.pid] ?? []).map { ($0, depth + 1) })
         }
-        return nil
+        return deepestShell
     }
 
     /// Every running process as (pid, parent, command).

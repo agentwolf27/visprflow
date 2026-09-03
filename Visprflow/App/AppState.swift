@@ -21,6 +21,9 @@ final class AppState {
     @ObservationIgnored
     var onShowSetup: (@MainActor () -> Void)?
 
+    @ObservationIgnored
+    var onShowSettings: (@MainActor () -> Void)?
+
     func refreshPermissions() {
         let latest = PermissionsService.current()
         if latest != permissions {
@@ -32,6 +35,10 @@ final class AppState {
 
     func showSetup() {
         onShowSetup?()
+    }
+
+    func showSettings() {
+        onShowSettings?()
     }
 
     /// Changes the trigger key and tells the running monitor about it.

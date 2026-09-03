@@ -29,10 +29,14 @@ struct MenuBarView: View {
 
             Divider()
 
-            Button("Open Setup…") {
-                state.showSetup()
+            Button("Destinations…") {
+                state.showSettings()
             }
             .keyboardShortcut(",", modifiers: .command)
+
+            Button("Setup…") {
+                state.showSetup()
+            }
 
             Button("Quit Visprflow") {
                 NSApp.terminate(nil)

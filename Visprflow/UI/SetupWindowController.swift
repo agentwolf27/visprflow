@@ -26,3 +26,29 @@ final class SetupWindowController: NSWindowController {
         window?.makeKeyAndOrderFront(nil)
     }
 }
+
+
+/// Window for the per-destination settings.
+@MainActor
+final class SettingsWindowController: NSWindowController {
+    init() {
+        let host = NSHostingController(rootView: DestinationSettingsView())
+        let window = NSWindow(contentViewController: host)
+        window.title = "Visprflow Destinations"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setContentSize(NSSize(width: 780, height: 520))
+        window.isReleasedWhenClosed = false
+        window.center()
+        super.init(window: window)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("SettingsWindowController is created in code")
+    }
+
+    func show() {
+        NSApp.activate()
+        window?.makeKeyAndOrderFront(nil)
+    }
+}

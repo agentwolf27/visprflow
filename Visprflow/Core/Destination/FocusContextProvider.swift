@@ -35,7 +35,13 @@ enum FocusContextProvider {
         )
 
         if let bundle, DestinationResolver.terminalBundles.contains(bundle) {
-            context.terminalProcess = ProcessTree.agentCommand(under: app.processIdentifier)
+            if let foreground = ProcessTree.foreground(under: app.processIdentifier) {
+                context.terminalProcess = foreground.isAgent ? foreground.command : "shell"
+                // The working directory of whatever is running is the project the user means.
+                if let directory = WorkspaceProbe.workingDirectory(of: foreground.pid) {
+                    context.workspace = WorkspaceProbe.probe(directory: directory)
+                }
+            }
         }
         if let bundle, DestinationResolver.browserBundles.contains(bundle) {
             context.browserURL = browserURL(bundle: bundle)

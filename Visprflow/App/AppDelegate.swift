@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let state = AppState()
     private(set) lazy var dictation = DictationController()
     private var setupWindow: SetupWindowController?
+    private var settingsWindow: SettingsWindowController?
     private var permissionPoll: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -17,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.app.info("Visprflow launched as \(Bundle.main.bundleIdentifier ?? "unknown bundle", privacy: .public)")
 
         state.onShowSetup = { [weak self] in self?.showSetup() }
+        state.onShowSettings = { [weak self] in self?.showSettings() }
         state.dictation = dictation
 
         do {
@@ -70,6 +72,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.startDictation()
             }
         }
+    }
+
+    private func showSettings() {
+        if settingsWindow == nil {
+            settingsWindow = SettingsWindowController()
+        }
+        settingsWindow?.show()
     }
 
     private func showSetup() {

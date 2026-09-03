@@ -9,6 +9,8 @@ struct FocusContext: Sendable, Equatable {
     var browserURL: String?
     /// Foreground process on the terminal's tty, such as `claude`, `codex` or `zsh`.
     var terminalProcess: String?
+    /// The project the terminal is sitting in, when there is one.
+    var workspace: WorkspaceContext = .none
     var isSecureInput: Bool = false
 
     static let unknown = FocusContext()

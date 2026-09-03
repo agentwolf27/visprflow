@@ -30,6 +30,7 @@ final class DictationController {
     @ObservationIgnored private var dismissTask: Task<Void, Never>?
     @ObservationIgnored private var activeWork: Task<Void, Never>?
     @ObservationIgnored private var capturedContext = FocusContext.unknown
+    @ObservationIgnored private let vocabulary = VocabularyCache()
     /// The dictation waiting for the user to press Return.
     @ObservationIgnored private var pending: Pending?
 
@@ -249,12 +250,17 @@ final class DictationController {
         destination: Destination
     ) async throws -> CompiledPrompt {
         let box = StreamBox()
+        // The project's own words, so "aut midway" can come back as "auth middleware".
+        // Spelling authority only: the compiler is told never to introduce a term from here
+        // that the speaker did not say.
+        let terms = vocabulary.terms(for: capturedContext.workspace)
         return try await compiler.compile(
             CompileRequest(
                 transcript: transcript,
                 level: level,
                 destination: destination.id,
-                instructions: destination.instructions
+                instructions: destination.instructions,
+                vocabulary: terms
             )
         ) { [weak self] delta in
             let partial = box.append(delta)
