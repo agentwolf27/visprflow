@@ -23,6 +23,10 @@ settings:
     CODE_SIGN_IDENTITY: "-"
     DEVELOPMENT_TEAM: ""
     SWIFT_STRICT_CONCURRENCY: complete
+    # Apple Silicon only. Parakeet runs on the Neural Engine, and FluidAudio's Float16 paths
+    # do not compile for x86_64, which a Release build would otherwise try to produce.
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
 
 packages:
