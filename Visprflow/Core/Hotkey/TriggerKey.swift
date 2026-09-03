@@ -51,6 +51,51 @@ struct TriggerKey: Codable, Sendable, Equatable, Hashable {
 
     static let presets: [TriggerKey] = [.fn, .rightOption, .rightCommand]
 
+    // MARK: Suitability
+
+    /// Why a key is a poor choice of trigger, or nil when it is fine.
+    ///
+    /// The app does not refuse these: a keyboard with no spare modifier may leave the user no
+    /// better option, and it is their machine. But choosing Left Shift means every capital
+    /// letter starts a dictation, which is worth saying plainly before they find out by typing.
+    var unsuitableReason: String? {
+        switch Int(keyCode) {
+        case kVK_Shift, kVK_RightShift:
+            "Shift types capital letters, so every capital would start a dictation."
+        case kVK_CapsLock:
+            "Caps Lock is handled by the system before apps see it, and toggles a state."
+        case kVK_Escape:
+            "Escape already cancels a dictation."
+        case kVK_Return, kVK_ANSI_KeypadEnter:
+            "Return sends messages and inserts newlines."
+        case kVK_Space:
+            "Space is the most common key you type."
+        case kVK_Tab:
+            "Tab moves between fields."
+        case kVK_Delete, kVK_ForwardDelete:
+            "Delete is used constantly while editing."
+        default:
+            ordinaryKeyReason
+        }
+    }
+
+    /// An ordinary printing key types its character everywhere, so holding it to talk means
+    /// never being able to type it again.
+    private var ordinaryKeyReason: String? {
+        guard !isModifier else { return nil }
+        // Function keys and the navigation cluster are safe: they print nothing.
+        let safeOrdinary: Set<Int> = [
+            kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5, kVK_F6, kVK_F7, kVK_F8,
+            kVK_F9, kVK_F10, kVK_F11, kVK_F12, kVK_F13, kVK_F14, kVK_F15,
+            kVK_F16, kVK_F17, kVK_F18, kVK_F19, kVK_F20,
+            kVK_Home, kVK_End, kVK_PageUp, kVK_PageDown, kVK_Help,
+        ]
+        if safeOrdinary.contains(Int(keyCode)) { return nil }
+        return "This key types a character, so holding it to talk would stop you typing it."
+    }
+
+    var isSuitable: Bool { unsuitableReason == nil }
+
     // MARK: Recognising a pressed key
 
     /// Device-dependent flag bits. macOS sets one of these alongside the general mask (such as

@@ -17,6 +17,13 @@ final class AppState {
     var triggerKey: TriggerKey = {
         if let data = UserDefaults.standard.data(forKey: "triggerKeyV2"),
            let decoded = try? JSONDecoder().decode(TriggerKey.self, from: data) {
+            // A saved key that types characters would fire on ordinary typing, which makes the
+            // app unusable before the user can reach the setting to change it. Shift was
+            // selectable before the suitability check existed, so refuse to restore one.
+            guard decoded.isSuitable else {
+                Log.hotkey.error("Ignoring unsuitable saved trigger \(decoded.displayName, privacy: .public); falling back to fn")
+                return .fn
+            }
             return decoded
         }
         return .fn

@@ -122,6 +122,17 @@ struct OnboardingView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if let reason = state.triggerKey.unsuitableReason {
+                calloutRow(
+                    icon: "exclamationmark.triangle.fill",
+                    tint: .orange,
+                    text: "\(state.triggerKey.displayName) is a poor trigger. \(reason)",
+                    button: "Use Right Option"
+                ) {
+                    state.setTriggerKey(.rightOption)
+                }
+            }
+
             HStack(spacing: 8) {
                 Text("Or pick one:").font(.caption).foregroundStyle(.secondary)
                 ForEach(TriggerKey.presets, id: \.self) { key in

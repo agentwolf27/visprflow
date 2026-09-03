@@ -159,9 +159,7 @@ final class AudioCapture {
         }
 
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            self?.consume(buffer, target: target)
-        }
+        input.installTap(onBus: 0, bufferSize: 1024, format: format, block: makeTapBlock(target: target))
 
         do {
             engine.prepare()
@@ -198,6 +196,20 @@ final class AudioCapture {
                 guard !Task.isCancelled else { return }
                 await self?.stopEngine()
             }
+        }
+    }
+
+    /// Builds the microphone tap block.
+    ///
+    /// This must be `nonisolated`, and that is not a detail. `AVAudioNodeTapBlock` is not marked
+    /// `@Sendable` in the SDK, so a closure written inline inside a `@MainActor` method silently
+    /// inherits main-actor isolation. AVFoundation then calls it on the realtime audio thread,
+    /// the runtime checks the executor and traps: `_dispatch_assert_queue_fail` with
+    /// EXC_BREAKPOINT, killing the app the moment recording starts. Creating the closure in a
+    /// nonisolated context is what stops it inheriting that isolation.
+    nonisolated private func makeTapBlock(target: AVAudioFormat) -> AVAudioNodeTapBlock {
+        { [weak self] buffer, _ in
+            self?.consume(buffer, target: target)
         }
     }
 
