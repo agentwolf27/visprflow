@@ -69,6 +69,11 @@ final class AudioCapture {
 
     /// Allocates engine resources without opening the microphone, so the first start is quick.
     func prepare() {
+        // Touching `inputNode` is what attaches it to the graph. `prepare()` on an engine with
+        // no nodes raises an Objective-C exception ("required condition is false: inputNode !=
+        // nullptr || outputNode != nullptr"), which unwinds past Swift's `catch` and is
+        // swallowed by the run loop: the app keeps running and the hotkey silently never starts.
+        _ = engine.inputNode
         engine.prepare()
     }
 

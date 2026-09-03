@@ -8,7 +8,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: SettingsWindowController?
     private var permissionPoll: Timer?
 
+    /// Objective-C exceptions unwind straight past Swift's `catch`, so a throw inside AppKit or
+    /// AVFoundation skips the rest of the function and is swallowed by the run loop. That is
+    /// exactly how startup once failed with no error logged at all: the app kept running, the
+    /// hotkey never started, and neither the success nor the failure branch was reached.
+    private func installExceptionHandler() {
+        NSSetUncaughtExceptionHandler { exception in
+            let name = exception.name.rawValue
+            let reason = exception.reason ?? "no reason given"
+            let stack = exception.callStackSymbols.prefix(12).joined(separator: " | ")
+            Log.app.error("Uncaught ObjC exception: \(name, privacy: .public) — \(reason, privacy: .public) :: \(stack, privacy: .public)")
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installExceptionHandler()
         // The unit tests are app-hosted, so this runs during `make test` too. Without this
         // guard a test run would migrate the developer's real history database and steal focus.
         guard NSClassFromString("XCTestCase") == nil else {
@@ -67,7 +81,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         do {
-            try dictation.start()
+            Log.app.info("startDictation: building the controller")
+            let controller = dictation
+            Log.app.info("startDictation: controller built, starting it")
+            try controller.start()
+            Log.app.info("startDictation: controller started")
             state.isListening = true
             state.startupError = nil
             Log.app.info("Hotkey monitor running; hold \(self.state.triggerKey.displayName, privacy: .public) to dictate")

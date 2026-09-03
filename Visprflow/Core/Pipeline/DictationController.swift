@@ -75,7 +75,9 @@ final class DictationController {
     // MARK: Lifecycle
 
     func start() throws {
+        Log.app.info("DictationController.start: preparing audio")
         capture.prepare()
+        Log.app.info("DictationController.start: audio prepared, starting monitor")
         try monitor.start()
     }
 
