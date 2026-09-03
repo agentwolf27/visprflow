@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         state.refreshPermissions()
+        Log.app.info("Startup permissions: \(self.state.permissions.description, privacy: .public), allGranted=\(self.state.permissions.allGranted, privacy: .public)")
         if state.permissions.allGranted {
             startDictation()
         } else {
@@ -35,6 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The grants land while the app is running, so watch for them and start then.
             watchForPermissions()
         }
+        // A grant can also be revoked, or arrive after a failed start, so keep watching either
+        // way rather than only when the app began without permission.
+        watchForPermissions()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -55,13 +59,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Private
 
     private func startDictation() {
-        guard !state.isListening else { return }
+        // Logged unconditionally, including the early return. A silent guard here was
+        // indistinguishable from a crash while debugging why the key did nothing.
+        Log.app.info("startDictation: isListening=\(self.state.isListening, privacy: .public) permissions=\(self.state.permissions.description, privacy: .public)")
+        guard !state.isListening else {
+            Log.app.info("startDictation: already running, nothing to do")
+            return
+        }
         do {
             try dictation.start()
             state.isListening = true
+            state.startupError = nil
             Log.app.info("Hotkey monitor running; hold \(self.state.triggerKey.displayName, privacy: .public) to dictate")
             Task { await dictation.warmUp() }
         } catch {
+            state.isListening = false
             state.startupError = error.localizedDescription
             Log.app.error("Could not start the hotkey monitor: \(error.localizedDescription, privacy: .public)")
         }
@@ -73,10 +85,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.state.refreshPermissions()
-                guard self.state.permissions.allGranted else { return }
-                self.permissionPoll?.invalidate()
-                self.permissionPoll = nil
+                guard self.state.permissions.allGranted, !self.state.isListening else { return }
                 self.startDictation()
+                if self.state.isListening {
+                    self.permissionPoll?.invalidate()
+                    self.permissionPoll = nil
+                }
             }
         }
     }

@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Carbon.HIToolbox
 import CoreGraphics
 import Foundation
@@ -86,7 +87,11 @@ final class HotkeyMonitor: @unchecked Sendable {
 
     @MainActor
     func start() throws {
-        guard tap == nil else { return }
+        Log.hotkey.info("Starting event tap for \(self.trigger.rawValue, privacy: .public); trusted=\(AXIsProcessTrusted(), privacy: .public)")
+        guard tap == nil else {
+            Log.hotkey.info("Event tap already running")
+            return
+        }
 
         let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
         let reference = Unmanaged.passUnretained(self).toOpaque()

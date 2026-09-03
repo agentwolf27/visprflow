@@ -39,6 +39,13 @@ final class AppState {
         fnUsage = .current
     }
 
+    /// One line describing whether dictation is actually live, for the menu bar.
+    var statusSummary: String {
+        if isListening { return "Listening" }
+        if startupError != nil { return "Failed to start" }
+        return permissions.allGranted ? "Starting…" : "Needs setup"
+    }
+
     func showSetup() {
         onShowSetup?()
     }
