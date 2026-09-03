@@ -4,10 +4,18 @@ DERIVED   := build
 APP       := $(DERIVED)/Build/Products/Debug/Visprflow.app
 XCB       := xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' -derivedDataPath $(DERIVED)
 
-.PHONY: gen build test verify-stt verify-subscription run release install clean logs
+.PHONY: gen regen build test verify-stt verify-subscription run release install clean logs
 
-## Generate Visprflow.xcodeproj from project.yml (requires: brew install xcodegen)
-gen:
+## Generate Visprflow.xcodeproj from project.yml (requires: brew install xcodegen).
+## Only regenerates when project.yml is newer than the project, because regenerating
+## invalidates the optimised dependency builds and turns a 30-second install into ten minutes.
+$(PROJECT): project.yml
+	xcodegen generate --quiet
+
+gen: $(PROJECT)
+
+## Force a regeneration even when project.yml has not changed.
+regen:
 	xcodegen generate --quiet
 
 ## Build the Debug app

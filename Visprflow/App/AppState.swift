@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 
 /// Observable state shared by the menu bar content and the setup window.
@@ -9,7 +10,12 @@ final class AppState {
     var isListening = false
     /// Set when the monitor could not start, so the setup window can explain why.
     var startupError: String?
-    var triggerKey: TriggerKey = .fn
+    /// Persisted, so a choice of Right Option survives a restart. fn only reaches apps from
+    /// the built-in keyboard, so anyone on an external keyboard has to change this.
+    var triggerKey: TriggerKey = {
+        let stored = UserDefaults.standard.string(forKey: "triggerKey")
+        return stored.flatMap(TriggerKey.init(rawValue:)) ?? .fn
+    }()
 
     /// How the fn key is currently configured system-wide. When it is not "Do Nothing" the
     /// system opens the emoji picker on a tap, which competes with using fn as a trigger.
@@ -45,6 +51,7 @@ final class AppState {
     func setTriggerKey(_ key: TriggerKey) {
         guard key != triggerKey else { return }
         triggerKey = key
+        UserDefaults.standard.set(key.rawValue, forKey: "triggerKey")
         dictation?.setTrigger(key)
         Log.hotkey.info("Trigger key changed to \(key.rawValue, privacy: .public)")
     }

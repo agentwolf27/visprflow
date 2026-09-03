@@ -3,7 +3,7 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let state = AppState()
-    private(set) lazy var dictation = DictationController()
+    private(set) lazy var dictation = DictationController(trigger: state.triggerKey)
     private var setupWindow: SetupWindowController?
     private var settingsWindow: SettingsWindowController?
     private var permissionPoll: Timer?
@@ -39,6 +39,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         dictation.stop()
+    }
+
+    /// Launching the app again while it is already running should bring the setup window back.
+    /// Without this, a menu bar app with no Dock icon has no obvious way to reopen it.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        showSetup()
+        return true
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

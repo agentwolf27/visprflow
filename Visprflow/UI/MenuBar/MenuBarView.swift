@@ -16,7 +16,7 @@ struct MenuBarView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(Permission.allCases) { permission in
+                ForEach(Permission.allCases.filter(\.isRequired)) { permission in
                     Label {
                         Text(permission.title)
                     } icon: {

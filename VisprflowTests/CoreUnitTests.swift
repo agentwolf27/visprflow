@@ -143,9 +143,19 @@ final class TimingRowTests: XCTestCase {
 }
 
 final class PermissionStatusTests: XCTestCase {
-    func testAllGrantedRequiresEveryPermission() {
-        XCTAssertFalse(PermissionStatus(microphone: true, accessibility: true, inputMonitoring: false).allGranted)
-        XCTAssertTrue(PermissionStatus(microphone: true, accessibility: true, inputMonitoring: true).allGranted)
+    func testAllGrantedNeedsMicrophoneAndAccessibilityOnly() {
+        // Input Monitoring is not required: the app opens an active event tap, which macOS
+        // gates on Accessibility. Requiring it meant waiting for a checkbox that never
+        // appears, because an app that never opens a listen-only tap is never listed there.
+        XCTAssertTrue(PermissionStatus(microphone: true, accessibility: true, inputMonitoring: false).allGranted)
+        XCTAssertFalse(PermissionStatus(microphone: true, accessibility: false, inputMonitoring: true).allGranted)
+        XCTAssertFalse(PermissionStatus(microphone: false, accessibility: true, inputMonitoring: true).allGranted)
+    }
+
+    func testOnlyTheGrantsTheAppUsesAreRequired() {
+        XCTAssertTrue(Permission.microphone.isRequired)
+        XCTAssertTrue(Permission.accessibility.isRequired)
+        XCTAssertFalse(Permission.inputMonitoring.isRequired)
     }
 
     func testIsGrantedMapsEachCase() {

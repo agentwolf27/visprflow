@@ -27,7 +27,9 @@ struct OnboardingView: View {
                 triggerKey
                 speechModel
                 providers
-                apiKey
+                if policy.fastPath == .apiKey || policy.compilePath == .apiKey {
+                    apiKey
+                }
                 pasteTest
             }
             .padding(24)
@@ -62,17 +64,23 @@ struct OnboardingView: View {
     private var permissions: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("Permissions", badge: state.permissions.allGranted ? "All granted" : nil)
-            ForEach(Permission.allCases) { permission in
+            ForEach(Permission.allCases.filter(\.isRequired)) { permission in
                 PermissionRow(permission: permission, granted: state.permissions.isGranted(permission)) {
                     Task {
                         await PermissionsService.request(permission)
                         state.refreshPermissions()
+                        // Accessibility and Input Monitoring cannot be granted from a dialog
+                        // this app controls, so take the user straight to the box they tick.
+                        if permission.needsSettingsPane, !state.permissions.isGranted(permission) {
+                            try? await Task.sleep(for: .milliseconds(400))
+                            PermissionsService.openSettings(for: permission)
+                        }
                     }
                 } openSettings: {
                     PermissionsService.openSettings(for: permission)
                 }
             }
-            Text("Debug builds are ad-hoc signed, so macOS ties these grants to the exact binary. Rebuilding means granting again. The README explains how to avoid that with a self-signed certificate.")
+            Text("Accessibility opens System Settings, because macOS will not let an app grant it to itself. Find Visprflow in the list and tick it. The grant is tied to this exact copy of the app, so replacing the app means granting again.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -205,7 +213,7 @@ struct OnboardingView: View {
     private var apiKey: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("Anthropic API key", badge: hasStoredKey ? "Stored in Keychain" : nil)
-            Text("Only needed if you chose the API above. Your Claude subscription works instead, and costs nothing extra.")
+            Text("Needed because you picked the API above. Switching back to your Claude subscription removes the need for a key entirely.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             HStack {
@@ -346,8 +354,9 @@ private struct PermissionRow: View {
             Spacer(minLength: 12)
             if !granted {
                 VStack(spacing: 6) {
-                    Button("Request", action: request)
-                    Button("System Settings…", action: openSettings)
+                    Button(permission.needsSettingsPane ? "Grant…" : "Request", action: request)
+                        .buttonStyle(.borderedProminent)
+                    Button("Open Settings", action: openSettings)
                         .font(.caption)
                 }
             }

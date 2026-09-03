@@ -4,8 +4,13 @@ import AVFoundation
 import CoreGraphics
 import Foundation
 
-/// The three TCC grants the app needs. Screen Recording and Apple Events arrive in phase 3,
-/// only when the user turns on the features that need them.
+/// The TCC grants the app can use.
+///
+/// Only Microphone and Accessibility are required. Input Monitoring is listed because macOS
+/// mentions it for keyboard hooks, but this app creates an *active* event tap
+/// (`options: .defaultTap`), which is gated on Accessibility. A listen-only tap is what needs
+/// Input Monitoring, and requiring it here meant waiting for a checkbox that never appeared:
+/// an app that never opens a listen-only tap is never added to that list.
 enum Permission: String, CaseIterable, Identifiable, Sendable {
     case microphone
     case accessibility
@@ -26,9 +31,30 @@ enum Permission: String, CaseIterable, Identifiable, Sendable {
         case .microphone:
             "Records your voice while the key is held. Audio is transcribed on this Mac and never uploaded."
         case .accessibility:
-            "Lets Visprflow paste the compiled prompt into the app you are using and read the text you selected."
+            "Watches for your trigger key and pastes the result into the app you are using. This is the one that matters."
         case .inputMonitoring:
-            "Lets Visprflow notice when you hold the fn key, in any app."
+            "Not required. Visprflow uses an active event tap, which macOS gates on Accessibility instead."
+        }
+    }
+
+    /// Whether the app refuses to run without this grant.
+    var isRequired: Bool {
+        switch self {
+        case .microphone, .accessibility: true
+        case .inputMonitoring: false
+        }
+    }
+
+    /// Whether macOS will reliably show a prompt, or whether the user must tick a box.
+    ///
+    /// Microphone shows a real dialog. Accessibility and Input Monitoring show a one-shot
+    /// notice that a menu bar app can easily lose behind other windows, and after any denial
+    /// they never show it again. For those two the request registers the app in the list, and
+    /// the user ticks the box in System Settings.
+    var needsSettingsPane: Bool {
+        switch self {
+        case .microphone: false
+        case .accessibility, .inputMonitoring: true
         }
     }
 
@@ -49,7 +75,8 @@ struct PermissionStatus: Equatable, Sendable, CustomStringConvertible {
     var accessibility = false
     var inputMonitoring = false
 
-    var allGranted: Bool { microphone && accessibility && inputMonitoring }
+    /// Everything the app actually needs. Input Monitoring is deliberately not included.
+    var allGranted: Bool { microphone && accessibility }
 
     func isGranted(_ permission: Permission) -> Bool {
         switch permission {
