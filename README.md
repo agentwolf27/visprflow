@@ -8,7 +8,7 @@ The plan, the research behind it and the phase breakdown are in [docs/plan.html]
 
 ## Status
 
-Phases 0 through 3 are built, plus most of the phase 4 and 5 polish. 175 tests pass. The app
+Phases 0 through 3 are built, plus most of the phase 4 and 5 polish. 177 tests pass. The app
 is installed at `~/Applications/Visprflow.app`.
 
 | Working | Not yet |
@@ -67,7 +67,7 @@ Hold `shift` with the trigger for verbatim, `control` for a full compile. Say "v
 
 ```bash
 make install   # Release build into ~/Applications (do this, then launch from there)
-make test      # 175 unit tests, about a minute
+make test      # 177 unit tests, about a minute
 make verify-stt   # speech tests against audio synthesised with `say`; needs no microphone
 make logs      # stream the app's own log
 ```

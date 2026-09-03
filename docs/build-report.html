@@ -123,9 +123,9 @@
 
 <div class="page">
   <header class="masthead">
-    <div class="eyebrow">Overnight build · 3 September 2026 · 02:20 to 10:50</div>
+    <div class="eyebrow">Overnight build · 3 September 2026 · 02:20 to 11:05</div>
     <h1>Visprflow Overnight Build</h1>
-    <p class="thesis">Phases 0 through 3 are built, audited and installed. The app runs, transcribes on-device, and idles at 24 MB. Three permission dialogs are waiting for you, and only you can click them.</p>
+    <p class="thesis">Phases 0 through 3 are built, audited and installed. The app runs, transcribes on-device, and idles at 6 MB. Three permission dialogs are waiting for you, and only you can click them.</p>
   </header>
 
   <div class="first">
@@ -149,10 +149,10 @@
     <div class="eyebrow">Verified, not asserted</div>
     <h2>What I could actually prove</h2>
     <div class="verified">
-      <div><div class="n">175</div><div class="k">unit tests passing</div></div>
+      <div><div class="n">177</div><div class="k">unit tests passing</div></div>
       <div><div class="n">100%</div><div class="k">word recall transcribing a spoken sentence</div></div>
       <div><div class="n">441 ms</div><div class="k">to transcribe 14 seconds of speech</div></div>
-      <div><div class="n">24 MB</div><div class="k">idle memory, against Wispr Flow's ~800 MB</div></div>
+      <div><div class="n">6 MB</div><div class="k">idle memory, against Wispr Flow's ~800 MB</div></div>
     </div>
     <p>The speech pipeline is verified end to end without a microphone. Audio is synthesised with the built-in <code>say</code> command, run through the same resampling path as live capture, and transcribed by the real model. That gives known ground truth and needs no permission. Three seconds of silence produced no words at all, which is the hallucination failure Whisper is known for.</p>
     <p>What I could not verify is anything that needs a permission dialog: holding the key, capturing from the microphone, and pasting into another app. Those paths are built and unit-tested, but the first real end-to-end dictation will be yours.</p>
@@ -267,7 +267,7 @@
     <p>Six commits on <code>feature/phase-1-loop</code>, merged into <code>dev</code> with a merge commit. Nothing was pushed anywhere, <code>main</code> is untouched, and no branch was deleted.</p>
 <pre><span class="c">$ cd ~/Visprflow</span>
 make install      <span class="c"># rebuild and reinstall to ~/Applications</span>
-make test         <span class="c"># 175 tests, about a minute</span>
+make test         <span class="c"># 177 tests, about a minute</span>
 make verify-stt   <span class="c"># speech tests against synthesised audio</span>
 make logs         <span class="c"># watch what the app is doing</span></pre>
     <p>The plan, with the research behind every decision, is on <a href="https://claude.ai/code/artifact/ec904aaf-3e02-4084-a0ed-34e4e33121d0">its own page</a> and at <code>docs/plan.html</code> in the repository.</p>
