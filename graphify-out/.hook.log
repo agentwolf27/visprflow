@@ -1,0 +1,5 @@
+[graphify extract] graph is empty — extraction produced no nodes. Possible causes: all files skipped, binary-only corpus, or LLM returned no edges.
+[graphify extract] scanning /Users/vish/Visprflow
+[graphify extract] --code-only: skipping 1 non-code file(s) (1 docs, 0 papers, 0 images) — no LLM extraction
+[graphify extract] found 0 code, 0 docs, 0 papers, 0 images
+[graphify extract] 1 file(s) not classified (no supported extension or shebang), skipped: .gitignore

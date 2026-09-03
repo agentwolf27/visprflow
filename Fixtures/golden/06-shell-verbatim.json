@@ -1,0 +1,9 @@
+{
+  "id": "shell-verbatim",
+  "destination": "shell",
+  "level": "VERBATIM",
+  "transcript": "git log --oneline -n 20",
+  "expected": "git log --oneline -n 20",
+  "mustContain": ["git log --oneline -n 20"],
+  "notes": "Shell prompts are never capitalised or punctuated."
+}

@@ -1,0 +1,9 @@
+{
+  "id": "login-token-refresh",
+  "destination": "claude_code",
+  "level": "FULL",
+  "transcript": "okay so um the login thing is broken again, users get logged out like after the token expires, I think it's in the auth folder, src slash auth, the refresh thing, no wait the token refresh not the session refresh, can you look at that and uh write a test that reproduces it first then fix it, don't touch the session stuff",
+  "expected": "Users are getting logged out after their token expires. I think the bug is in the token refresh logic under src/auth/ (not the session refresh). Write a failing test that reproduces the logout-after-expiry first, then fix it. Don't change the session code.",
+  "mustContain": ["src/auth/"],
+  "notes": "Self-correction, spoken path, verification and constraint the user actually said."
+}
