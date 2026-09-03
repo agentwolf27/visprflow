@@ -14,6 +14,9 @@ struct OnboardingView: View {
     @State private var pasteMessage: String?
     @State private var pasteInFlight = false
 
+    @State private var policy = ProviderSettings().policy()
+    private let providerSettings = ProviderSettings()
+
     private static let pasteMarker = "Visprflow test paste ✓"
 
     var body: some View {
@@ -23,6 +26,7 @@ struct OnboardingView: View {
                 permissions
                 triggerKey
                 speechModel
+                providers
                 apiKey
                 pasteTest
             }
@@ -118,10 +122,90 @@ struct OnboardingView: View {
         }
     }
 
+    private var providers: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Where rewrites go", badge: nil)
+            Text("Cleaning up a message and compiling a prompt are different jobs, so they can use different providers.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            providerPicker(
+                title: "Quick cleanup",
+                subtitle: "Fillers, punctuation, capitalisation. Happens constantly, so it should feel instant.",
+                selection: Binding(
+                    get: { policy.fastPath },
+                    set: { policy.fastPath = $0; providerSettings.save(policy) }
+                )
+            )
+            providerPicker(
+                title: "Compiled prompts",
+                subtitle: "Restructuring a rambling request. Rarer, and you see a preview while it works.",
+                selection: Binding(
+                    get: { policy.compilePath },
+                    set: { policy.compilePath = $0; providerSettings.save(policy) }
+                )
+            )
+
+            if policy.fastPath == .subscription {
+                calloutRow(
+                    icon: "clock.fill",
+                    tint: .orange,
+                    text: "Quick cleanup through the subscription takes 6 to 10 seconds, because it starts a new Claude Code session each time. On this Mac it is worth leaving on “On this Mac”.",
+                    button: "Use this Mac"
+                ) {
+                    policy.fastPath = .local
+                    providerSettings.save(policy)
+                }
+            }
+            if !ClaudeCLIGenerator.isAvailable,
+               policy.fastPath == .subscription || policy.compilePath == .subscription {
+                calloutRow(
+                    icon: "exclamationmark.triangle.fill",
+                    tint: .orange,
+                    text: "The claude command line tool was not found. Install Claude Code, or pick another provider.",
+                    button: "Use an API key"
+                ) {
+                    policy.compilePath = .apiKey
+                    providerSettings.save(policy)
+                }
+            }
+        }
+    }
+
+    private func providerPicker(
+        title: String,
+        subtitle: String,
+        selection: Binding<ProviderChoice>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(title).font(.body.weight(.medium))
+                Spacer()
+                Text(selection.wrappedValue.latencyNote)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            Picker("", selection: selection) {
+                ForEach(ProviderChoice.allCases, id: \.self) { choice in
+                    Text(choice.displayName).tag(choice)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            Text(selection.wrappedValue.summary)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+    }
+
     private var apiKey: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("Anthropic API key", badge: hasStoredKey ? "Stored in Keychain" : nil)
-            Text("Used to compile transcripts into prompts. Without it, Visprflow still dictates: it inserts the cleaned transcript.")
+            Text("Only needed if you chose the API above. Your Claude subscription works instead, and costs nothing extra.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             HStack {

@@ -138,7 +138,7 @@
         <li><strong>Open the app.</strong> It is at <code>~/Applications/Visprflow.app</code> and already running. Its setup window is open behind your other windows; the menu bar icon is a crossed-out microphone until the grants land.</li>
         <li><strong>Grant Microphone, Accessibility and Input Monitoring.</strong> Each has a Request button. macOS shows those dialogs only to a person at the keyboard, which is the one thing I could not do for you.</li>
         <li><strong>Set the fn key to "Do Nothing"</strong> in System Settings, Keyboard. macOS opens the emoji picker before any app sees that key. The setup window detects this and links straight to the pane. On an external keyboard, switch the trigger to Right Option instead.</li>
-        <li><strong>Paste an Anthropic API key</strong> into the setup window. Without it the app still dictates and inserts the cleaned transcript. With it, speech is compiled into a prompt shaped for whatever you are typing into.</li>
+        <li><strong>Pick where rewrites go</strong> in the setup window. The default costs you nothing: quick cleanup runs on this Mac instantly, and compiled prompts go through your Claude subscription. An API key is offered as the fast option, not a required one.</li>
       </ol>
     </div>
   </div>
@@ -226,6 +226,28 @@
   </section>
 
   <section>
+    <div class="eyebrow">Added after you woke up</div>
+    <h2>Using your subscription instead of an API key</h2>
+    <p>You asked whether the Claude subscription could replace paid API calls. It can, through the <code>claude</code> command line tool in print mode. I measured both on this Mac and built three providers rather than picking one.</p>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Provider</th><th class="num">First word</th><th class="num">Complete</th><th>Cost</th><th>Handles</th></tr></thead>
+        <tbody>
+          <tr><td><strong>On this Mac</strong></td><td class="num">instant</td><td class="num">instant</td><td>free</td><td>Fillers, stutters, spoken punctuation, capitalisation. No model involved.</td></tr>
+          <tr><td><strong>Your subscription</strong></td><td class="num">~3 s</td><td class="num">6–10 s</td><td>included in your plan</td><td>Everything. Same models, same quality.</td></tr>
+          <tr><td><strong>API key</strong></td><td class="num">~0.7 s</td><td class="num">1–2 s</td><td>~$0.002 each</td><td>Everything, fastest.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>The default mixes them, because cleanup and compilation have opposite needs. Tidying "hey can you send me the figma link" happens constantly and has to feel instant, and it is mechanical enough to do with rules. Restructuring a rambling request into a prompt happens rarely, is worth waiting for, and you are watching a preview while it works. So quick cleanup runs locally and compiled prompts go to your subscription. Nothing costs extra.</p>
+    <p>Local cleanup deliberately refuses one thing. Resolving "the call is at nine, no wait, eleven thirty" needs judgement about which half to keep, and getting it wrong silently changes what you meant. Those transcripts are detected and handed to a model automatically.</p>
+    <div class="callout good">
+      <p><strong>Verified against the live subscription.</strong> The full pipeline was run through the real CLI. The rambling login example came back as: "Users are getting logged out after their token expires. I think the bug is in the token refresh logic under src/auth/ (not the session refresh). Look into that and write a test that reproduces it first, then fix it. Don't touch the session code." The self-correction was applied, the constraint survived, nothing was invented. It also rewrote a question rather than answering it. That took 8.7 seconds.</p>
+    </div>
+    <p>One bug worth recording: the CLI's <code>--disallowed-tools</code> flag takes a list, so a prompt placed after it is swallowed as another tool name and the tool exits saying it received no input. The prompt has to sit immediately after <code>-p</code>. There is a regression test pinning the argument order.</p>
+  </section>
+
+  <section>
     <div class="eyebrow">Decisions</div>
     <h2>Calls I made for you</h2>
     <p>You said to go with my recommendations, so these are settled unless you want them changed.</p>
@@ -252,7 +274,7 @@
       <li><strong>No notarisation.</strong> This Mac has no Apple Developer ID, so the app is ad-hoc signed. It runs fine for you, but it cannot be given to anyone else without Gatekeeper complaining, and there is no automatic updating.</li>
       <li><strong>Permission grants are tied to the exact binary.</strong> Launch from <code>~/Applications</code>. If you rebuild and run from <code>build/</code>, macOS treats it as a different app and asks again. The README explains how a self-signed certificate avoids this during development.</li>
       <li><strong>No live dictation was ever run.</strong> Everything downstream of the microphone is tested; the microphone itself needs a permission I could not grant.</li>
-      <li><strong>The compiler has never called the real API.</strong> There is no Anthropic key on this machine. The request shape is unit-tested against the current model contracts, and the whole pipeline runs offline against a mock, but the first real call will be yours.</li>
+      <li><strong>The API path has never been exercised for real</strong>, since there is no key on this machine. Its request shape is unit-tested against the current model contracts. The subscription path, which is now the default for compiled prompts, has been run end to end against the live model.</li>
       <li><strong>Selected text, screen OCR and the clipboard</strong> are not yet used as context. Repository vocabulary is, which is the piece that fixes mangled technical terms.</li>
       <li><strong>Latency has not been measured end to end</strong>, only per stage. The instrumentation is in place: every dictation writes its per-stage timings to the local database.</li>
     </ul>

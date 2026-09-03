@@ -15,6 +15,7 @@ is installed at `~/Applications/Visprflow.app`.
 |---|---|
 | Hold-to-talk, double-tap for hands-free, Escape to cancel | Streaming cloud speech recognition (phase 4) |
 | On-device transcription with Parakeet v3 | Groq as a faster rewrite provider |
+| Three rewrite providers: local, subscription, API key | |
 | Destination detection and per-destination instructions | Selected text and screen OCR as context |
 | Prompt compilation with guardrails and a raw fallback | Snippets and a prompt library |
 | Preview with Return to insert, Tab to change level | Notarised distribution and Sparkle updates |
@@ -36,8 +37,18 @@ Two more things worth doing in that window:
   picker before any app sees the key. The setup window detects this and links straight there.
   On an external keyboard, switch the trigger to Right Option instead: `fn` only reaches apps
   from the built-in keyboard.
-- **Paste an Anthropic API key.** Without one the app still dictates, inserting the cleaned
-  transcript; with one it compiles the transcript into a prompt shaped for the destination.
+- **Choose where rewrites go.** Three options, and the default mixes them:
+
+  | Provider | Speed | Cost |
+  |---|---|---|
+  | On this Mac | instant | free |
+  | Your Claude subscription | 3 s to first word, 6–10 s total | included in your plan |
+  | Anthropic API key | 0.7 s to first word, 1–2 s total | roughly $0.002 per dictation |
+
+  The default keeps quick cleanup local and sends compiled prompts to your subscription, so
+  nothing costs extra and the common path stays instant. Local cleanup handles fillers,
+  stutters, spoken punctuation and capitalisation. It does not attempt self-corrections, so
+  a transcript containing "no wait" or "scratch that" is handed to a model automatically.
 
 Launch from `~/Applications`, not from `build/`. Debug builds are ad-hoc signed, so macOS ties
 the grants to the exact binary and every rebuild loses them.
@@ -66,10 +77,11 @@ Hold `shift` with the trigger for verbatim, `control` for a full compile. Say "v
 ## Build and run
 
 ```bash
-make install   # Release build into ~/Applications (do this, then launch from there)
-make test      # 177 unit tests, about a minute
-make verify-stt   # speech tests against audio synthesised with `say`; needs no microphone
-make logs      # stream the app's own log
+make install              # Release build into ~/Applications (launch from there)
+make test                 # unit tests, about a minute
+make verify-stt           # speech tests against audio from `say`; needs no microphone
+make verify-subscription  # drives the real `claude` CLI; spends subscription quota
+make logs                 # stream the app's own log
 ```
 
 `project.yml` is the source of truth; the `.xcodeproj` is generated and git-ignored.
@@ -99,7 +111,8 @@ docs/plan.html           The plan
 
 Audio never leaves the machine. The only thing sent anywhere is the transcript, the vocabulary
 list, the destination name and your own instruction, and only when an edit level above verbatim
-applies. Every dictation is stored locally in
+applies and the provider for that level is not local. Set both providers to "On this Mac" and
+nothing leaves at all. Every dictation is stored locally in
 `~/Library/Application Support/Visprflow/visprflow.sqlite` together with the exact request that
 was sent, so the claim is inspectable rather than promised.
 

@@ -49,7 +49,7 @@ final class DictationController {
 
     init(
         transcriber: any Transcriber = ParakeetTranscriber(),
-        compiler: any PromptCompiling = Compiler(generator: ClaudeGenerator()),
+        compiler: any PromptCompiling = Compiler(policy: ProviderSettings().policy()),
         inserter: Inserter = Inserter(),
         settings: DestinationSettings = DestinationSettings(),
         trigger: TriggerKey = .fn

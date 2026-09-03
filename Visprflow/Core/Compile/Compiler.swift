@@ -8,13 +8,22 @@ import Foundation
 /// again one level lower. If that also fails, the raw transcript is inserted, because what the
 /// user actually said is never wrong.
 struct Compiler: PromptCompiling {
-    let generator: any TextGenerating
+    /// Builds the generator for a given edit level. The default routes by policy: mechanical
+    /// cleanup runs locally and instantly, real restructuring goes to a model.
+    let generatorForLevel: @Sendable (EditLevel) -> any TextGenerating
     var guardrails: Guardrails = .default
     /// Whether a rejected attempt is retried at a lower level before falling back to raw text.
     var retriesOnce = true
 
+    /// One generator for every level, which is what the tests use.
     init(generator: any TextGenerating, guardrails: Guardrails = .default) {
-        self.generator = generator
+        self.generatorForLevel = { _ in generator }
+        self.guardrails = guardrails
+    }
+
+    /// Routes by policy, so LIGHT can be free and instant while FULL goes to a model.
+    init(policy: ProviderPolicy, guardrails: Guardrails = .default) {
+        self.generatorForLevel = { level in RoutingGenerator(policy: policy, level: level) }
         self.guardrails = guardrails
     }
 
@@ -47,6 +56,7 @@ struct Compiler: PromptCompiling {
             // Each attempt accumulates its own text, so a rejected attempt's partial output
             // is replaced in the overlay rather than appended to.
             let accumulator = PartialText()
+            let generator = generatorForLevel(attempt.level)
             let output: String
             do {
                 output = try await generator.generate(generation) { delta in

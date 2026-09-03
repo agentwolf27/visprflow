@@ -4,7 +4,7 @@ DERIVED   := build
 APP       := $(DERIVED)/Build/Products/Debug/Visprflow.app
 XCB       := xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' -derivedDataPath $(DERIVED)
 
-.PHONY: gen build test verify-stt run release install clean logs
+.PHONY: gen build test verify-stt verify-subscription run release install clean logs
 
 ## Generate Visprflow.xcodeproj from project.yml (requires: brew install xcodegen)
 gen:
@@ -23,6 +23,12 @@ test: gen
 verify-stt: gen
 	TEST_RUNNER_VISPRFLOW_STT=1 $(XCB) test -only-testing:VisprflowTests/SpeechIntegrationTests 2>&1 | \
 		grep -E 'STT|error:|Test Case .* (passed|failed)|Executed|TEST ' || true
+
+## Run the subscription tests against the real `claude` command line tool.
+## Spends real Claude subscription quota.
+verify-subscription: gen
+	TEST_RUNNER_VISPRFLOW_CLI=1 $(XCB) test -only-testing:VisprflowTests/SubscriptionIntegrationTests 2>&1 | \
+		grep -E 'SUBSCRIPTION|error:|Test Case .* (passed|failed)|Executed|TEST ' || true
 
 ## Build the optimised Release app.
 ## ARCHS is passed here rather than in project.yml because Swift package targets are separate
