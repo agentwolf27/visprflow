@@ -13,15 +13,16 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     MACOSX_DEPLOYMENT_TARGET: "15.0"
-    # Ad-hoc signing until a Developer ID exists (phase 5). Note that ad-hoc means TCC pins
-    # the app by cdhash, so Accessibility and Input Monitoring must be re-granted after a
-    # rebuild. The README explains how to swap in a self-signed identity to avoid that.
-    # The hardened runtime is deliberately NOT set here: `codesign --sign -` does not apply
-    # `--options=runtime`, so claiming it would be false comfort. Phase 5 turns it on with
-    # a real Developer ID.
+    # Signed with a self-signed identity created by scripts/create-signing-identity.sh.
+    # This is not cosmetic: an ad-hoc signature ("-") gives the app no stable identity, so
+    # macOS records every permission grant against the exact bytes of the binary and each
+    # rebuild wipes Microphone, Accessibility and the rest. A fixed certificate means the
+    # grants survive. Falls back to ad-hoc when the certificate is absent, so a fresh clone
+    # still builds.
     CODE_SIGN_STYLE: Manual
-    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_IDENTITY: "Visprflow Dev"
     DEVELOPMENT_TEAM: ""
+    CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
     SWIFT_STRICT_CONCURRENCY: complete
     # Apple Silicon only. Parakeet runs on the Neural Engine, and FluidAudio's Float16 paths
     # do not compile for x86_64, which a Release build would otherwise try to produce.
