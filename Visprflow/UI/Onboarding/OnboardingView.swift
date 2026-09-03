@@ -88,20 +88,48 @@ struct OnboardingView: View {
 
     private var triggerKey: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("Trigger key", badge: state.isListening ? "Listening" : nil)
-            Text("fn only reaches apps from the built-in keyboard. On an external keyboard, use Right Option.")
+            sectionTitle("Trigger key", badge: state.isListening ? "Ready" : nil)
+            Text("Press the key you want to hold while talking. Any key works, including ones on a third-party keyboard. A modifier such as Option or Command is the best choice, because it types nothing on its own.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            Picker("", selection: Binding(
-                get: { state.triggerKey },
-                set: { state.setTriggerKey($0) }
-            )) {
-                ForEach(TriggerKey.allCases, id: \.self) { key in
-                    Text(key.displayName).tag(key)
+
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Current key").font(.caption).foregroundStyle(.secondary)
+                    Text(state.triggerKey.displayName)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(state.isRecordingTrigger ? .secondary : .primary)
+                }
+                Spacer()
+                if state.isRecordingTrigger {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Press any key…").font(.callout)
+                        Button("Cancel") { state.cancelTriggerRecording() }
+                    }
+                } else {
+                    Button("Set a different key…") { state.recordTriggerKey() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!state.isListening)
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            .padding(12)
+            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+
+            if !state.isListening {
+                Text("Grant the permissions above first; the key can only be recorded once the app is watching the keyboard.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Text("Or pick one:").font(.caption).foregroundStyle(.secondary)
+                ForEach(TriggerKey.presets, id: \.self) { key in
+                    Button(key.displayName) { state.setTriggerKey(key) }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                }
+            }
 
             if state.triggerKey == .fn, state.fnUsage.conflictsWithTrigger {
                 calloutRow(

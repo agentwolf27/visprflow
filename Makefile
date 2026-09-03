@@ -7,14 +7,14 @@ XCB       := xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination 'plat
 .PHONY: gen regen build test verify-stt verify-subscription run release install clean logs
 
 ## Generate Visprflow.xcodeproj from project.yml (requires: brew install xcodegen).
-## Only regenerates when project.yml is newer than the project, because regenerating
-## invalidates the optimised dependency builds and turns a 30-second install into ten minutes.
-$(PROJECT): project.yml
-	xcodegen generate --quiet
+## --use-cache leaves the project untouched when nothing has changed, which matters because
+## rewriting it invalidates the optimised dependency builds and turns a short install into a
+## ten-minute one. It still notices new source files, which a timestamp check on project.yml
+## alone does not.
+gen:
+	@xcodegen generate --quiet --use-cache --cache-path .xcodegen-cache
 
-gen: $(PROJECT)
-
-## Force a regeneration even when project.yml has not changed.
+## Force a regeneration even when the cache says nothing changed.
 regen:
 	xcodegen generate --quiet
 

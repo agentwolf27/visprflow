@@ -5,42 +5,6 @@ import CoreGraphics
 import Foundation
 import Synchronization
 
-/// Which key starts a dictation.
-enum TriggerKey: String, Codable, Sendable, CaseIterable {
-    /// The fn / Globe key. On most Macs it only reaches this process from the built-in keyboard.
-    case fn
-    /// Right Option, the recommended alternative for external keyboards.
-    case rightOption
-
-    var displayName: String {
-        switch self {
-        case .fn: "fn (Globe)"
-        case .rightOption: "Right Option"
-        }
-    }
-
-    var keyCode: CGKeyCode {
-        switch self {
-        case .fn: CGKeyCode(kVK_Function)
-        case .rightOption: CGKeyCode(kVK_RightOption)
-        }
-    }
-
-    /// Device-dependent bit for the right Option key. `.maskAlternate` is set while *either*
-    /// Option key is down, so using it would miss the release whenever the left one is held.
-    static let rightOptionBit: UInt64 = 0x040000
-
-    /// True when this key is currently held, given an event's flags.
-    func isHeld(in flags: CGEventFlags) -> Bool {
-        switch self {
-        case .fn:
-            flags.contains(.maskSecondaryFn)
-        case .rightOption:
-            flags.rawValue & Self.rightOptionBit != 0
-        }
-    }
-}
-
 /// Watches the keyboard for the trigger key and turns it into `HotkeyAction`s.
 ///
 /// Uses an active `CGEventTap` rather than Carbon's `RegisterEventHotKey`, because Carbon cannot
@@ -67,6 +31,8 @@ final class HotkeyMonitor: @unchecked Sendable {
     /// True while the overlay shows a preview, so Return, Tab, Escape and R belong to us
     /// rather than to the app behind it.
     private let previewMode = Mutex(false)
+    /// Set while the setup window is waiting for the user to press their chosen key.
+    private let recorder = Mutex<(@Sendable (TriggerKey) -> Void)?>(nil)
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var watchdog: Timer?
@@ -87,13 +53,15 @@ final class HotkeyMonitor: @unchecked Sendable {
 
     @MainActor
     func start() throws {
-        Log.hotkey.info("Starting event tap for \(self.trigger.rawValue, privacy: .public); trusted=\(AXIsProcessTrusted(), privacy: .public)")
+        Log.hotkey.info("Starting event tap for \(self.trigger.displayName, privacy: .public); trusted=\(AXIsProcessTrusted(), privacy: .public)")
         guard tap == nil else {
             Log.hotkey.info("Event tap already running")
             return
         }
 
-        let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
+        let mask = (1 << CGEventType.keyDown.rawValue)
+            | (1 << CGEventType.keyUp.rawValue)
+            | (1 << CGEventType.flagsChanged.rawValue)
         let reference = Unmanaged.passUnretained(self).toOpaque()
 
         guard let tap = CGEvent.tapCreate(
@@ -114,7 +82,7 @@ final class HotkeyMonitor: @unchecked Sendable {
         self.tap = tap
         self.runLoopSource = source
         startWatchdog()
-        Log.hotkey.info("Event tap started for \(self.trigger.rawValue, privacy: .public)")
+        Log.hotkey.info("Event tap started for \(self.trigger.displayName, privacy: .public)")
     }
 
     deinit {
@@ -156,6 +124,51 @@ final class HotkeyMonitor: @unchecked Sendable {
         previewMode.withLock { $0 = enabled }
     }
 
+    /// Captures the next key the user presses and reports it, instead of matching the trigger.
+    ///
+    /// This exists because guessing a key from the keyboard's label does not work: compact and
+    /// third-party keyboards often have no Right Option, and `fn` never leaves the built-in
+    /// keyboard. Asking the hardware is the only reliable way.
+    func recordNextKey(_ handler: @escaping @Sendable (TriggerKey) -> Void) {
+        recorder.withLock { $0 = handler }
+        Log.hotkey.info("Recording the next key press")
+    }
+
+    func cancelRecording() {
+        recorder.withLock { $0 = nil }
+    }
+
+    var isRecordingKey: Bool { recorder.withLock { $0 != nil } }
+
+    /// Reports a pressed key to a waiting recorder. Returns true when the event was consumed.
+    private func captureIfRecording(type: CGEventType, event: CGEvent) -> Bool {
+        guard let handler = recorder.withLock({ $0 }) else { return false }
+        let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+
+        switch type {
+        case .flagsChanged:
+            // Only report on the press, not the release, so the key is captured as it goes down.
+            guard let mask = TriggerKey.deviceFlag(forModifier: keyCode),
+                  event.flags.rawValue & mask != 0
+            else { return true }
+        case .keyDown:
+            // Escape means "never mind", and is not a sensible trigger anyway.
+            if keyCode == CGKeyCode(kVK_Escape) {
+                recorder.withLock { $0 = nil }
+                Log.hotkey.info("Key recording cancelled")
+                return true
+            }
+        default:
+            return false
+        }
+
+        let key = TriggerKey.recognised(keyCode: keyCode, flags: event.flags)
+        recorder.withLock { $0 = nil }
+        Log.hotkey.info("Recorded trigger: \(key.displayName, privacy: .public) code=\(key.keyCode, privacy: .public) mask=\(key.flagMask, privacy: .public)")
+        handler(key)
+        return true
+    }
+
     /// Ends a hands-free session because the microphone heard nothing for a while.
     func reportSilenceTimeout() {
         deliver(gesture.withLock { $0.handle(.silenceTimeout) })
@@ -165,6 +178,12 @@ final class HotkeyMonitor: @unchecked Sendable {
 
     /// Returns nil to swallow the event. Runs on the main run loop.
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Bool {
+        // While recording a new trigger, every key belongs to the recorder. Swallow it so the
+        // key does not also reach whatever is behind the setup window.
+        if isRecordingKey, captureIfRecording(type: type, event: event) {
+            return type == .flagsChanged
+        }
+
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             // The system switched our tap off, usually because a callback was slow. Re-enable
@@ -189,8 +208,35 @@ final class HotkeyMonitor: @unchecked Sendable {
             })
             return true
 
+        case .keyUp:
+            // Only reached for a non-modifier trigger; modifier releases arrive as flagsChanged.
+            let trigger = self.trigger
+            guard !trigger.isModifier,
+                  CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode)) == trigger.keyCode
+            else { return true }
+            let now = Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+            deliver(gesture.withLock {
+                $0.handle(.triggerUp(at: now, modifiers: Self.modifiers(from: event.flags)))
+            })
+            return false
+
         case .keyDown:
             let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+
+            // A non-modifier trigger starts the gesture here. autorepeat is ignored so holding
+            // the key does not restart the capture over and over.
+            let trigger = self.trigger
+            if !trigger.isModifier, keyCode == trigger.keyCode {
+                let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+                if !isRepeat {
+                    let now = Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+                    deliver(gesture.withLock {
+                        $0.handle(.triggerDown(at: now, modifiers: Self.modifiers(from: event.flags)))
+                    })
+                }
+                // Swallow it: the trigger must not type into the app behind us.
+                return false
+            }
 
             if previewMode.withLock({ $0 }), let key = Self.previewKey(for: keyCode, flags: event.flags) {
                 deliver(.preview(key))

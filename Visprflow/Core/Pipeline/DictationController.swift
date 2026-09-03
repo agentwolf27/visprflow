@@ -88,6 +88,15 @@ final class DictationController {
         panel?.dismiss()
     }
 
+    /// Captures the next key press and reports it, for the setup window's key recorder.
+    func recordNextKey(_ handler: @escaping @Sendable (TriggerKey) -> Void) {
+        monitor.recordNextKey(handler)
+    }
+
+    func cancelKeyRecording() {
+        monitor.cancelRecording()
+    }
+
     func setTrigger(_ key: TriggerKey) {
         monitor.setTrigger(key)
     }
