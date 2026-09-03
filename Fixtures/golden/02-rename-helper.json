@@ -1,0 +1,9 @@
+{
+  "id": "rename-helper",
+  "destination": "claude_code",
+  "level": "LIGHT",
+  "transcript": "rename the uh the helper in utils to parse date camel case and update the imports",
+  "expected": "Rename the helper in utils to parseDate (camelCase) and update its imports.",
+  "mustContain": ["parseDate"],
+  "notes": "Under 25 words, so LIGHT even for a coding agent. Identifier case spoken aloud."
+}

@@ -1,0 +1,9 @@
+{
+  "id": "oauth-plan",
+  "destination": "claude_code",
+  "level": "FULL",
+  "transcript": "I'm wondering like how we'd add google oauth to this, what files would change, don't write any code yet just um give me a plan, and think hard about how it interacts with the session flow",
+  "expected": "How would we add Google OAuth to this app? Don't write any code yet. Think hard about how it interacts with the existing session flow, then give me a plan: which files would change and any risks.",
+  "mustContain": ["Don't write any code yet", "Think hard"],
+  "notes": "Process requests pass through untouched; the question stays a question."
+}

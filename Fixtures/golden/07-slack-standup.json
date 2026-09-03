@@ -1,0 +1,9 @@
+{
+  "id": "slack-standup",
+  "destination": "message",
+  "level": "MEDIUM",
+  "transcript": "so for standup um yesterday I finished the export endpoint and uh started on the retry logic, today I'm going to finish retries and then look at the flaky test, oh and I'm blocked on the staging creds, someone needs to send me those",
+  "expected": "Standup:\n- Yesterday: finished the export endpoint, started on the retry logic\n- Today: finish retries, then look at the flaky test\n- Blocked: need the staging creds from someone",
+  "mustContain": ["staging creds"],
+  "notes": "Spoken enumeration becomes a list; nothing added."
+}
