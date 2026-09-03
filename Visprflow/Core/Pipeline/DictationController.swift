@@ -240,7 +240,7 @@ final class DictationController {
                 try await insert(compiled, transcript: transcript, destination: destination)
             }
 
-        } catch is CancellationError {
+        } catch where Self.isCancellation(error) {
             // Superseded by a newer dictation, which now owns the overlay. Touching it here
             // would hide the overlay of the recording that is still in progress.
         } catch {
@@ -402,7 +402,7 @@ final class DictationController {
                     level: compiled.level,
                     destination: pending.destination.displayName
                 ))
-            } catch is CancellationError {
+            } catch where Self.isCancellation(error) {
                 // Superseded by another key press.
             } catch {
                 self.report(error)
@@ -435,6 +435,16 @@ final class DictationController {
     private static let previewLifetime: TimeInterval = 90
 
     // MARK: Errors and history
+
+    /// Cancellation reaches here in two shapes: Swift's own `CancellationError`, and
+    /// `GenerationError.cancelled`, which `Compiler` and `ClaudeCLIGenerator` throw in its place.
+    /// Treating the second as a real failure is what let an abandoned dictation clear the
+    /// overlay belonging to the dictation that replaced it, and dismiss it 2.5 s later.
+    static func isCancellation(_ error: any Error) -> Bool {
+        if error is CancellationError { return true }
+        if case GenerationError.cancelled = error { return true }
+        return false
+    }
 
     private func report(_ error: any Error) {
         let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription

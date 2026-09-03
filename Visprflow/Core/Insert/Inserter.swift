@@ -118,7 +118,15 @@ final class Inserter {
         // Clipboard managers honour these markers and skip the entry entirely.
         pasteboard.setString("", forType: Self.transientType)
 
-        try await postPasteChord(chord)
+        do {
+            try await postPasteChord(chord)
+        } catch {
+            // The clipboard has already been cleared at this point. Failing without putting the
+            // user's own content back would silently destroy whatever they had copied.
+            snapshot.restore(to: pasteboard)
+            Log.insert.error("Paste chord failed; clipboard restored: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
         let postedAt = ContinuousClock.now
 
         // Wait for the target app to actually read our data, then restore.
