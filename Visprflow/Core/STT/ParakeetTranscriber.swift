@@ -1,3 +1,4 @@
+import CoreML
 import FluidAudio
 import Foundation
 
@@ -63,6 +64,27 @@ actor ParakeetTranscriber: Transcriber {
     // MARK: Private
 
     /// Loads once even if several dictations race to be first.
+    /// Runs one throwaway inference so the first real dictation does not pay for it.
+    ///
+    /// Loading the models is not the whole cost: the first `transcribe` also compiles the Core ML
+    /// graph and sets up Neural Engine scheduling. Without this the first dictation after launch
+    /// is visibly slower than every one after it.
+    private static func warmUp(_ manager: AsrManager) async {
+        let silence = [Float](repeating: 0, count: Int(AudioCapture.sampleRate * 0.3))
+        let started = ContinuousClock.now
+        do {
+            let layers = await manager.decoderLayerCount
+            var state = TdtDecoderState.make(decoderLayers: layers)
+            _ = try await manager.transcribe(silence, decoderState: &state)
+            let elapsed = Trace.milliseconds(ContinuousClock.now - started)
+            Log.stt.info("Warm-up inference took \(String(format: "%.0f", elapsed), privacy: .public)ms")
+        } catch {
+            // A failed warm-up costs nothing: the next real transcription simply pays the price
+            // it would have paid anyway.
+            Log.stt.info("Warm-up inference skipped: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     private func loadedManager(progress: (@Sendable (Double) -> Void)?) async throws -> AsrManager {
         if let manager { return manager }
         if let loadTask { return try await loadTask.value }
@@ -72,6 +94,11 @@ actor ParakeetTranscriber: Transcriber {
             let started = ContinuousClock.now
             let models = try await AsrModels.downloadAndLoad(
                 version: .v3,
+                // Placing the conformer encoder on the GPU is roughly 8% faster end to end and
+                // makes no difference to accuracy, per FluidAudio's own benchmark. The default
+                // avoids the GPU only so iOS can keep running in the background, which does not
+                // apply to a Mac menu bar app.
+                encoderComputeUnits: .cpuAndGPU,
                 progressHandler: progress.map { handler -> ProgressHandler in
                     { update in handler(update.fractionCompleted) }
                 }
@@ -79,7 +106,8 @@ actor ParakeetTranscriber: Transcriber {
             let manager = AsrManager(config: .default)
             try await manager.loadModels(models)
             let elapsed = Trace.milliseconds(ContinuousClock.now - started) / 1000
-            Log.stt.info("Parakeet ready in \(String(format: "%.1f", elapsed))s")
+            Log.stt.info("Parakeet ready in \(String(format: "%.1f", elapsed), privacy: .public)s")
+            await Self.warmUp(manager)
             return manager
         }
         loadTask = task

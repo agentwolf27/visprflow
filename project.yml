@@ -24,6 +24,8 @@ settings:
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
     SWIFT_STRICT_CONCURRENCY: complete
+    # Objective-C exceptions cannot be caught from Swift, and AVFoundation raises them.
+    SWIFT_OBJC_BRIDGING_HEADER: Visprflow/Visprflow-Bridging-Header.h
     # Apple Silicon only. Parakeet runs on the Neural Engine, and FluidAudio's Float16 paths
     # do not compile for x86_64, which a Release build would otherwise try to produce.
     ARCHS: arm64

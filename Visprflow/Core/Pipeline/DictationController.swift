@@ -33,6 +33,10 @@ final class DictationController {
     @ObservationIgnored private var contextTask: Task<FocusContext, Never>?
     @ObservationIgnored private var capturedContext = FocusContext.unknown
     @ObservationIgnored private let vocabulary = VocabularyCache()
+    @ObservationIgnored private var triggerHealth = TriggerHealth()
+    @ObservationIgnored private var currentTrigger: TriggerKey
+    /// Set when the trigger looks like it is firing while the user types, for the setup window.
+    private(set) var triggerWarning: String?
     /// The dictation waiting for the user to press Return.
     @ObservationIgnored private var pending: Pending?
 
@@ -67,6 +71,7 @@ final class DictationController {
         self.compiler = compiler
         self.inserter = inserter
         self.settings = settings
+        self.currentTrigger = trigger
 
         // The monitor needs a callback at construction, but that callback needs the controller.
         // A box breaks the cycle without leaving either side optional for the rest of its life.
@@ -107,7 +112,21 @@ final class DictationController {
     }
 
     func setTrigger(_ key: TriggerKey) {
+        currentTrigger = key
+        triggerHealth.reset()
+        triggerWarning = nil
         monitor.setTrigger(key)
+    }
+
+    /// Watches for the trigger firing because the user is typing rather than dictating.
+    private func noteCaptureLength(_ seconds: TimeInterval) {
+        let now = Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+        guard triggerHealth.record(duration: seconds, at: now) else { return }
+        let message = triggerHealth.message(for: currentTrigger)
+        triggerWarning = message
+        Log.hotkey.error("\(message, privacy: .public)")
+        show(.failed(message: message))
+        hide(after: 4)
     }
 
     /// Downloads and loads the speech model, reporting progress for the setup window.
@@ -140,9 +159,17 @@ final class DictationController {
 
         case let .finishCapture(modifiers, _):
             trace.mark(.keyUp)
-            let samples = capture.stop()
             stopMeter()
-            finish(samples: samples, modifiers: modifiers)
+            // Show "Transcribing" straight away: the post-roll below is a real wait, and an
+            // overlay still saying "Listening" after the key is up reads as a hang.
+            show(.transcribing)
+            // The last fraction of a second has been spoken but not yet delivered by the tap,
+            // so stopping on the key-up alone truncates the final word.
+            Task { [weak self] in
+                guard let self else { return }
+                let samples = await capture.stopAfterPostRoll()
+                finish(samples: samples, modifiers: modifiers)
+            }
 
         case let .discardCapture(reason):
             capture.discard()
@@ -150,6 +177,7 @@ final class DictationController {
             clearPending()
             switch reason {
             case .tooShort:
+                noteCaptureLength(0)
                 hide(after: 0)
             case .escape, .resynchronise:
                 show(.failed(message: "Cancelled"))

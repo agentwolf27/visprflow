@@ -56,12 +56,22 @@ final class AudioRingBufferTests: XCTestCase {
         XCTAssertEqual(ring.snapshot(), [9, 8], "ordering is correct again after a reset")
     }
 
-    func testHalfSecondOfAudioAtSampleRate() {
-        // The real configuration: 500 ms of 16 kHz mono.
-        var ring = AudioRingBuffer(capacity: Int(AudioCapture.sampleRate * AudioCapture.preRollDuration))
-        XCTAssertEqual(ring.capacity, 8_000)
-        ring.append([Float](repeating: 0.5, count: 10_000))
-        XCTAssertEqual(ring.count, 8_000)
-        XCTAssertEqual(ring.snapshot().count, 8_000)
+    func testHoldsTheConfiguredPreRollAtSampleRate() {
+        // The real configuration: one second of 16 kHz mono, which is 64 KB. This only helps
+        // while the engine is already running; a cold start clears the ring deliberately.
+        let expected = Int(AudioCapture.sampleRate * AudioCapture.preRollDuration)
+        var ring = AudioRingBuffer(capacity: expected)
+        XCTAssertEqual(ring.capacity, 16_000)
+        ring.append([Float](repeating: 0.5, count: expected + 2_000))
+        XCTAssertEqual(ring.count, expected, "the ring holds exactly the pre-roll, no more")
+        XCTAssertEqual(ring.snapshot().count, expected)
+    }
+
+    func testPreRollIsLongEnoughToCoverAnEarlyStart() {
+        // Speaking a moment before the key goes down is the case this exists for, so the window
+        // has to be a real fraction of a second rather than a token amount.
+        XCTAssertGreaterThanOrEqual(AudioCapture.preRollDuration, 0.75)
+        // And the post-roll has to outlast a tap buffer period, or the last word is truncated.
+        XCTAssertGreaterThanOrEqual(AudioCapture.postRollDuration, 0.1)
     }
 }

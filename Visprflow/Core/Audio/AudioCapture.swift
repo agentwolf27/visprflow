@@ -36,7 +36,13 @@ final class AudioCapture {
 
     nonisolated static let sampleRate: Double = 16_000
     /// How much audio the ring keeps for pre-roll.
-    nonisolated static let preRollDuration: TimeInterval = 0.5
+    ///
+    /// This covers the case where the user starts speaking a moment before the key goes down.
+    /// It only helps while the engine is already running, which is what the linger below is
+    /// for: on a cold start the ring is deliberately cleared, because anything in it predates
+    /// the engine stopping and splicing minute-old audio onto a new dictation would be worse
+    /// than losing a syllable. A second of 16 kHz mono is 64 KB.
+    nonisolated static let preRollDuration: TimeInterval = 1.0
     /// How long the engine keeps running after a dictation, ready for the next one.
     nonisolated static let lingerDuration: TimeInterval = 6
 
@@ -73,8 +79,24 @@ final class AudioCapture {
         // no nodes raises an Objective-C exception ("required condition is false: inputNode !=
         // nullptr || outputNode != nullptr"), which unwinds past Swift's `catch` and is
         // swallowed by the run loop: the app keeps running and the hotkey silently never starts.
-        _ = engine.inputNode
-        engine.prepare()
+        //
+        // The trap means a future variant of that exception is reported rather than fatal.
+        do {
+            try Self.catchingObjC {
+                _ = self.engine.inputNode
+                self.engine.prepare()
+            }
+        } catch {
+            Log.audio.error("Preparing the audio engine raised: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Runs AVFoundation work that may raise an Objective-C exception, as a Swift error.
+    nonisolated static func catchingObjC(_ body: () -> Void) throws {
+        var error: NSError?
+        if !VFRunCatchingExceptions(body, &error) {
+            throw error ?? Failure.engineFailed("unknown Objective-C exception")
+        }
     }
 
     /// Starts (or reuses) the engine and begins accumulating samples.
@@ -92,11 +114,26 @@ final class AudioCapture {
             state.isCapturing = true
             state.silenceSeconds = 0
         }
-        Log.audio.info("Capture started with \(self.preRollSampleCount) samples of pre-roll")
+        Log.audio.info("Capture started with \(self.preRollSampleCount, privacy: .public) samples of pre-roll")
     }
 
     private var preRollSampleCount: Int {
         state.withLock { $0.captured.count }
+    }
+
+    /// How long to keep capturing after the key comes up.
+    ///
+    /// The tap delivers in 1024-frame buffers, so at key-up the last fraction of a second of
+    /// speech has been spoken but not yet handed to us. Stopping immediately truncates the final
+    /// word — the complaint every dictation app gets, and one Superwhisper shipped this same fix
+    /// for. Two buffer periods at 48 kHz is comfortably enough.
+    nonisolated static let postRollDuration: TimeInterval = 0.12
+
+    /// Stops accumulating and returns the captured samples at 16 kHz mono, after waiting for
+    /// the audio already spoken to arrive.
+    func stopAfterPostRoll() async -> [Float] {
+        try? await Task.sleep(for: .seconds(Self.postRollDuration))
+        return stop()
     }
 
     /// Stops accumulating and returns the captured samples at 16 kHz mono.
@@ -110,7 +147,7 @@ final class AudioCapture {
             return captured
         }
         scheduleLingerStop()
-        Log.audio.info("Capture stopped with \(samples.count) samples (\(String(format: "%.2f", Double(samples.count) / Self.sampleRate))s)")
+        Log.audio.info("Capture stopped with \(samples.count, privacy: .public) samples (\(String(format: "%.2f", Double(samples.count) / Self.sampleRate), privacy: .public)s)")
         return samples
     }
 
@@ -158,14 +195,27 @@ final class AudioCapture {
             state.ring.removeAll()
         }
 
-        input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format, block: makeTapBlock(target: target))
+        // installTap raises rather than throws when the format does not match the hardware,
+        // which is routine when a device changes underneath us.
+        do {
+            try Self.catchingObjC {
+                input.removeTap(onBus: 0)
+                input.installTap(
+                    onBus: 0,
+                    bufferSize: 1024,
+                    format: format,
+                    block: self.makeTapBlock(target: target)
+                )
+                self.engine.prepare()
+            }
+        } catch {
+            throw Failure.engineFailed(error.localizedDescription)
+        }
 
         do {
-            engine.prepare()
             try engine.start()
         } catch {
-            input.removeTap(onBus: 0)
+            try? Self.catchingObjC { input.removeTap(onBus: 0) }
             throw Failure.engineFailed(error.localizedDescription)
         }
 

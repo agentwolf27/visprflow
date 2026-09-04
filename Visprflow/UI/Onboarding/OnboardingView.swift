@@ -122,6 +122,19 @@ struct OnboardingView: View {
                     .foregroundStyle(.secondary)
             }
 
+            // Raised by the runtime check when the key fires while the user is typing, which
+            // catches keyboards the static rules cannot know about.
+            if let warning = state.dictation?.triggerWarning {
+                calloutRow(
+                    icon: "exclamationmark.triangle.fill",
+                    tint: .orange,
+                    text: warning,
+                    button: "Use Right Option"
+                ) {
+                    state.setTriggerKey(.rightOption)
+                }
+            }
+
             if let reason = state.triggerKey.unsuitableReason {
                 calloutRow(
                     icon: "exclamationmark.triangle.fill",
