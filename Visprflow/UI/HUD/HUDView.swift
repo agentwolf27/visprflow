@@ -4,7 +4,7 @@ import SwiftUI
 enum HUDState: Equatable, Sendable {
     case hidden
     /// Recording. `locked` means hands-free, so the key is not being held.
-    case listening(level: Float, seconds: TimeInterval, locked: Bool)
+    case listening(level: Float, seconds: TimeInterval, locked: Bool, partial: String = "")
     case transcribing
     /// The compiler is streaming its result in. Phase 2 fills this with real text.
     case compiling(partial: String)
@@ -22,8 +22,8 @@ struct HUDView: View {
             switch state {
             case .hidden:
                 EmptyView()
-            case let .listening(level, seconds, locked):
-                listening(level: level, seconds: seconds, locked: locked)
+            case let .listening(level, seconds, locked, partial):
+                listening(level: level, seconds: seconds, locked: locked, partial: partial)
             case .transcribing:
                 row(icon: "waveform", tint: .secondary) {
                     Text("Transcribing…").foregroundStyle(.secondary)
@@ -56,7 +56,12 @@ struct HUDView: View {
 
     // MARK: Pieces
 
-    private func listening(level: Float, seconds: TimeInterval, locked: Bool) -> some View {
+    private func listening(
+        level: Float,
+        seconds: TimeInterval,
+        locked: Bool,
+        partial: String
+    ) -> some View {
         row(icon: locked ? "lock.fill" : "mic.fill", tint: .red) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
@@ -71,6 +76,18 @@ struct HUDView: View {
                         .foregroundStyle(.tertiary)
                 }
                 LevelMeter(level: level)
+                // Words appear here as they are recognised, so a long dictation shows progress
+                // rather than an anonymous meter. Deliberately in our own overlay: provisional
+                // text cannot be reliably retracted from the app being typed into.
+                if !partial.isEmpty {
+                    Text(partial)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .truncationMode(.head)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(.opacity)
+                }
             }
         }
     }

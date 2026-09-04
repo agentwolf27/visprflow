@@ -33,6 +33,9 @@ final class DictationController {
     @ObservationIgnored private var contextTask: Task<FocusContext, Never>?
     @ObservationIgnored private var capturedContext = FocusContext.unknown
     @ObservationIgnored private let vocabulary = VocabularyCache()
+    @ObservationIgnored private let streaming = StreamingTranscriber()
+    /// Live transcript from the streaming model, shown in the overlay while the user speaks.
+    @ObservationIgnored private var livePartial = ""
     @ObservationIgnored private var triggerHealth = TriggerHealth()
     @ObservationIgnored private var currentTrigger: TriggerKey
     /// Set when the trigger looks like it is firing while the user types, for the setup window.
@@ -156,7 +159,12 @@ final class DictationController {
             beginCapture()
 
         case .lockedOn:
-            show(.listening(level: capture.currentLevel, seconds: elapsed, locked: true))
+            show(.listening(
+                level: capture.currentLevel,
+                seconds: elapsed,
+                locked: true,
+                partial: livePartial
+            ))
 
         case let .finishCapture(modifiers, _):
             trace.mark(.keyUp)
@@ -175,6 +183,8 @@ final class DictationController {
         case let .discardCapture(reason):
             capture.discard()
             stopMeter()
+            livePartial = ""
+            Task { [streaming] in await streaming.cancel() }
             clearPending()
             switch reason {
             case .tooShort:
@@ -219,8 +229,23 @@ final class DictationController {
         do {
             try capture.start()
             trace.mark(.captureStarted)
+            livePartial = ""
             show(.listening(level: 0, seconds: 0, locked: false))
             startMeter()
+            // Transcribe while the user is still talking, so the words are already decoded when
+            // the key comes up rather than the whole utterance waiting until then.
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await streaming.begin(draining: capture) { partial in
+                        Task { @MainActor [weak self] in self?.livePartial = partial }
+                    }
+                } catch {
+                    // The batch transcriber still runs at key-up, so this only costs the live
+                    // preview.
+                    Log.stt.error("Streaming session failed to start: \(error.localizedDescription, privacy: .public)")
+                }
+            }
         } catch {
             lastError = error.localizedDescription
             show(.failed(message: error.localizedDescription))
@@ -245,7 +270,15 @@ final class DictationController {
 
     private func run(samples: [Float], modifiers: GestureModifiers) async {
         do {
-            // Transcription and the context probe overlap; both are needed before compiling.
+            // The streaming model runs alongside the capture purely to show words as they are
+            // spoken. The final transcript comes from the batch model, deliberately.
+            //
+            // Measured here rather than assumed: the batch model needs about 80 ms for ten
+            // seconds of audio, so using the streamed text would save a saving nobody can
+            // perceive — and it is measurably less accurate, turning "parser" into "passer" in
+            // the integration tests. FluidAudio's own documentation says the offline model has
+            // better long-form recall. Accuracy wins a trade that costs 80 ms.
+            await streaming.stop()
             let transcript = try await transcriber.transcribe(samples: samples, hints: .none)
             trace.mark(.transcriptReady)
             let context = await contextTask?.value ?? capturedContext
@@ -592,7 +625,12 @@ final class DictationController {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let locked = self.monitor.isLocked
-                self.hud = .listening(level: self.capture.currentLevel, seconds: self.elapsed, locked: locked)
+                self.hud = .listening(
+                    level: self.capture.currentLevel,
+                    seconds: self.elapsed,
+                    locked: locked,
+                    partial: self.livePartial
+                )
                 // Hands-free stops itself once the room goes quiet.
                 if locked, self.capture.silenceSeconds >= self.silenceStopAfter {
                     self.monitor.reportSilenceTimeout()

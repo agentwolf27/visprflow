@@ -4,7 +4,7 @@ DERIVED   := build
 APP       := $(DERIVED)/Build/Products/Debug/Visprflow.app
 XCB       := xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' -derivedDataPath $(DERIVED)
 
-.PHONY: gen regen build test verify-stt verify-subscription run release install clean logs
+.PHONY: gen regen build test verify-stt verify-streaming verify-subscription run release install clean logs
 
 ## Generate Visprflow.xcodeproj from project.yml (requires: brew install xcodegen).
 ## --use-cache leaves the project untouched when nothing has changed, which matters because
@@ -37,6 +37,11 @@ verify-stt: gen
 verify-subscription: gen
 	TEST_RUNNER_VISPRFLOW_CLI=1 $(XCB) test -only-testing:VisprflowTests/SubscriptionIntegrationTests 2>&1 | \
 		grep -E 'SUBSCRIPTION|error:|Test Case .* (passed|failed)|Executed|TEST ' || true
+
+## Run the streaming tests against audio from `say`. First run downloads the streaming model.
+verify-streaming: gen
+	TEST_RUNNER_VISPRFLOW_STT=1 $(XCB) test -only-testing:VisprflowTests/StreamingIntegrationTests 2>&1 | \
+		grep -E 'STREAMING|error:|Test Case .* (passed|failed)|Executed|TEST ' || true
 
 ## Build the optimised Release app.
 ## ARCHS is passed here rather than in project.yml because Swift package targets are separate

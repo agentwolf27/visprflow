@@ -58,6 +58,8 @@ final class AudioCapture {
         var level: Float = 0
         /// Consecutive seconds below the silence threshold, for hands-free auto-stop.
         var silenceSeconds: TimeInterval = 0
+        /// How much of `captured` the streaming transcriber has already been given.
+        var drainedCount = 0
     }
 
     private var engine = AVAudioEngine()
@@ -175,12 +177,28 @@ final class AudioCapture {
             state.captured.reserveCapacity(Int(Self.sampleRate * Self.maximumCaptureDuration))
             state.isCapturing = true
             state.silenceSeconds = 0
+            state.drainedCount = 0
         }
         Log.audio.info("Capture started with \(self.preRollSampleCount, privacy: .public) samples of pre-roll")
     }
 
     private var preRollSampleCount: Int {
         state.withLock { $0.captured.count }
+    }
+
+    /// Samples captured since the last call, for transcribing while the user is still speaking.
+    ///
+    /// Pulling rather than pushing keeps the audio thread out of it entirely: the tap only ever
+    /// appends to `captured` under the mutex, and the streaming transcriber collects from a
+    /// normal task on its own schedule. Passing buffers across from the render callback would
+    /// mean either allocating there or handing a non-Sendable buffer between threads.
+    nonisolated func drainNewSamples() -> [Float] {
+        state.withLock { state in
+            guard state.captured.count > state.drainedCount else { return [] }
+            let new = Array(state.captured[state.drainedCount...])
+            state.drainedCount = state.captured.count
+            return new
+        }
     }
 
     /// How long to keep capturing after the key comes up.
