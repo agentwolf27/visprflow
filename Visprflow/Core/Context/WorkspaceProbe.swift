@@ -70,20 +70,50 @@ enum WorkspaceProbe {
             return ""
         }
 
-        // Read on a background queue so a large output cannot deadlock the pipe.
+        // The obvious loop here — `while process.isRunning, Date() < deadline { append(
+        // handle.availableData) }` — does not work, and its timeout is an illusion:
+        // `availableData` blocks until there is data or EOF, so a child that prints nothing and
+        // never exits (an `osascript` querying a beachballed browser is the usual one) blocks
+        // inside that call and the deadline is never evaluated again. That hung the dictation on
+        // "Transcribing…" forever and leaked a thread every time.
+        //
+        // Instead the blocking read happens on a background queue and the wait is a semaphore
+        // that genuinely expires. Terminating the child closes the pipe, which unblocks the
+        // reader, so nothing is left parked.
         let handle = pipe.fileHandleForReading
-        let deadline = Date().addingTimeInterval(timeout)
-        var data = Data()
-        while process.isRunning, Date() < deadline {
-            data.append(handle.availableData)
-            usleep(10_000)
+        let output = Collected()
+        let finished = DispatchSemaphore(value: 0)
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            output.append(handle.readDataToEndOfFile())
+            finished.signal()
         }
-        if process.isRunning {
+
+        if finished.wait(timeout: .now() + timeout) == .timedOut {
             process.terminate()
+            // Closing the pipe releases the reader; wait briefly so the child is reaped.
+            _ = finished.wait(timeout: .now() + 0.5)
             Log.app.error("Timed out running \(executable, privacy: .public)")
             return ""
         }
-        data.append(handle.readDataToEndOfFile())
-        return String(decoding: data, as: UTF8.self)
+
+        process.waitUntilExit()
+        return String(decoding: output.data, as: UTF8.self)
+    }
+
+    /// Accumulates pipe output written from the reader queue and read from the caller.
+    private final class Collected: @unchecked Sendable {
+        private let lock = NSLock()
+        private var buffer = Data()
+
+        func append(_ chunk: Data) {
+            lock.lock(); defer { lock.unlock() }
+            buffer.append(chunk)
+        }
+
+        var data: Data {
+            lock.lock(); defer { lock.unlock() }
+            return buffer
+        }
     }
 }

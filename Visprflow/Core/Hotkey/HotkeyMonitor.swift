@@ -174,6 +174,13 @@ final class HotkeyMonitor: @unchecked Sendable {
         deliver(gesture.withLock { $0.handle(.silenceTimeout) })
     }
 
+    /// Finishes a dictation whose trigger has been held past the safety ceiling, which in
+    /// practice means the key-up was never delivered.
+    func reportHoldTimeout() {
+        let now = Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+        deliver(gesture.withLock { $0.handle(.holdTimeout(at: now)) })
+    }
+
     // MARK: Tap callback
 
     /// Returns nil to swallow the event. Runs on the main run loop.

@@ -47,6 +47,15 @@ final class DictationController {
     /// How long hands-free recording tolerates silence before stopping on its own.
     private let silenceStopAfter: TimeInterval = 1.2
 
+    /// A hold longer than this finishes the dictation by itself.
+    ///
+    /// A key-up can genuinely go missing: Secure Event Input suppresses key events entirely, so
+    /// releasing a non-modifier trigger while a password field has focus is never seen. Without
+    /// a ceiling the gesture stays held forever, audio accumulates at roughly 64 MB an hour, and
+    /// Escape cannot rescue it because Escape is suppressed too. Five minutes is well past any
+    /// real dictation.
+    private let maximumHold: TimeInterval = 300
+
     init(
         transcriber: any Transcriber = ParakeetTranscriber(),
         compiler: any PromptCompiling = Compiler(policy: ProviderSettings().policy()),
@@ -145,6 +154,9 @@ final class DictationController {
             case .escape, .resynchronise:
                 show(.failed(message: "Cancelled"))
                 hide(after: 0.8)
+            case .tooLong:
+                show(.failed(message: "Stopped after \(Int(maximumHold / 60)) minutes"))
+                hide(after: 2.5)
             }
             Log.app.info("Dictation discarded: \(reason.rawValue, privacy: .public)")
 
@@ -531,6 +543,13 @@ final class DictationController {
                 // Hands-free stops itself once the room goes quiet.
                 if locked, self.capture.silenceSeconds >= self.silenceStopAfter {
                     self.monitor.reportSilenceTimeout()
+                }
+                // A key-up that never arrives would otherwise record forever. Escape cannot
+                // rescue that under Secure Input, where key events are suppressed, so the
+                // ceiling is the only way out.
+                if self.elapsed >= self.maximumHold {
+                    Log.hotkey.error("Trigger held past \(self.maximumHold, privacy: .public)s; finishing")
+                    self.monitor.reportHoldTimeout()
                 }
             }
         }

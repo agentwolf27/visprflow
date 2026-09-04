@@ -68,24 +68,14 @@ enum ProcessTree {
 
     /// Every running process as (pid, parent, command).
     static func snapshot() -> [Entry] {
-        let process = Process()
-        process.executableURL = URL(filePath: "/bin/ps")
         // `args=` rather than `comm=`: an npm-installed agent runs as `node .../claude`, and a
         // Python one as `python3 .../aider`, so the executable name alone finds neither.
-        process.arguments = ["-axo", "pid=,ppid=,args="]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-        } catch {
-            Log.app.error("Could not list processes: \(error.localizedDescription, privacy: .public)")
-            return []
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return parse(String(decoding: data, as: UTF8.self))
+        //
+        // Routed through WorkspaceProbe.run for its timeout. Read directly, this blocked
+        // forever whenever `ps` wedged on a stalled filesystem or a stuck process table,
+        // leaving the dictation on "Transcribing…" with no way out.
+        let output = WorkspaceProbe.run("/bin/ps", ["-axo", "pid=,ppid=,args="], timeout: 1.5)
+        return parse(output)
     }
 
     /// Parses `ps -axo pid=,ppid=,comm=` output.

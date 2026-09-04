@@ -27,6 +27,8 @@ enum HotkeyEvent: Equatable, Sendable {
     case escape
     /// Silence ran long enough to end a hands-free session.
     case silenceTimeout
+    /// The trigger has been held past the safety ceiling; finish what was captured.
+    case holdTimeout(at: TimeInterval)
     /// The event tap was disabled and re-enabled; any in-flight gesture is unreliable.
     case resynchronise
 }
@@ -58,6 +60,8 @@ enum DiscardReason: String, Equatable, Sendable {
     case tooShort
     case escape
     case resynchronise
+    /// The key was held past the safety ceiling, so the key-up was probably never delivered.
+    case tooLong
 }
 
 /// Push-to-talk with double-tap-to-lock for the trigger key.
@@ -121,12 +125,32 @@ struct HotkeyGesture: Sendable {
             cancel(reason: .escape)
         case .silenceTimeout:
             handleSilence()
+        case let .holdTimeout(at):
+            handleHoldTimeout(at: at)
         case .resynchronise:
             cancel(reason: .resynchronise)
         }
     }
 
     // MARK: Private
+
+    /// The trigger has been held past the ceiling, which in practice means the key-up was never
+    /// delivered. Finish with what was captured rather than discarding it: the user did speak,
+    /// and throwing away five minutes of audio to punish a missed event helps nobody.
+    private mutating func handleHoldTimeout(at _: TimeInterval) -> HotkeyAction {
+        switch state {
+        case .idle, .lockArming:
+            return .none
+        case .holding:
+            state = .idle
+            lastShortTapEnded = nil
+            return .finishCapture(modifiers: .none, locked: false)
+        case .locked, .lockStopping:
+            state = .idle
+            lastShortTapEnded = nil
+            return .finishCapture(modifiers: .none, locked: true)
+        }
+    }
 
     private mutating func handleDown(at time: TimeInterval) -> HotkeyAction {
         switch state {
