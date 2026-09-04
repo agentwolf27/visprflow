@@ -23,6 +23,10 @@ struct ClaudeCLIGenerator: TextGenerating {
         self.workingDirectory = workingDirectory
     }
 
+    /// A compile that has produced nothing by now is stuck, not slow. Measured runs finish in
+    /// 6-10 s, so this is generous.
+    static let timeout: TimeInterval = 60
+
     /// Whether the CLI is installed and usable.
     static var isAvailable: Bool {
         findExecutable() != nil
@@ -93,9 +97,9 @@ struct ClaudeCLIGenerator: TextGenerating {
         process.standardInput = FileHandle.nullDevice
 
         let output = Pipe()
-        let errors = Pipe()
+        let errorPipe = Pipe()
         process.standardOutput = output
-        process.standardError = errors
+        process.standardError = errorPipe
 
         do {
             try process.run()
@@ -103,46 +107,69 @@ struct ClaudeCLIGenerator: TextGenerating {
             throw GenerationError.transport("Could not run the claude command: \(error.localizedDescription)")
         }
 
+        // Both pipes are drained by readability handlers on background queues. Reading stdout
+        // inline blocked a cooperative thread for the whole 6-10 s of a compile, made the
+        // cancellation check unreachable until data happened to arrive, and deadlocked outright
+        // whenever --verbose filled the 64 KB stderr buffer while we were blocked on stdout.
         let collected = TextAccumulator()
-        let handle = output.fileHandleForReading
+        let errors = TextAccumulator()
+        let outHandle = output.fileHandleForReading
+        let errHandle = errorPipe.fileHandleForReading
 
-        // Parse the newline-delimited JSON stream as it arrives, so the overlay fills in
-        // rather than sitting empty for several seconds.
-        var buffer = Data()
-        while true {
-            if Task.isCancelled {
-                process.terminate()
-                throw GenerationError.cancelled
-            }
+        let lines = LineBuffer()
+        outHandle.readabilityHandler = { handle in
             let chunk = handle.availableData
-            if chunk.isEmpty { break }
-            buffer.append(chunk)
-
-            while let newline = buffer.firstIndex(of: UInt8(ascii: "\n")) {
-                let line = Data(buffer[buffer.startIndex..<newline])
-                buffer.removeSubrange(buffer.startIndex...newline)
-                guard let text = String(data: line, encoding: .utf8), !text.isEmpty else { continue }
-                if let delta = Self.textDelta(in: text) {
+            guard !chunk.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
+            for line in lines.append(chunk) {
+                if let delta = Self.textDelta(in: line) {
                     collected.append(delta)
                     onDelta(delta)
                 }
-                if let failure = Self.errorMessage(in: text) {
-                    process.terminate()
-                    throw GenerationError.transport(failure)
-                }
             }
         }
-        process.waitUntilExit()
+        errHandle.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
+            errors.append(String(decoding: chunk, as: UTF8.self))
+        }
+
+        let finished = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in finished.signal() }
+
+        // Cancellation and the wall-clock ceiling both have to be able to interrupt a CLI that
+        // is waiting on auth or a stalled network, where no output ever arrives.
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    if finished.wait(timeout: .now() + Self.timeout) == .timedOut {
+                        Log.compile.error("The claude command exceeded \(Self.timeout, privacy: .public)s; terminating")
+                        process.terminate()
+                        _ = finished.wait(timeout: .now() + 1)
+                    }
+                    continuation.resume()
+                }
+            }
+        } onCancel: {
+            process.terminate()
+        }
+
+        outHandle.readabilityHandler = nil
+        errHandle.readabilityHandler = nil
+
+        if Task.isCancelled { throw GenerationError.cancelled }
 
         let result = collected.value().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !result.isEmpty else {
             if process.terminationStatus == 0 { throw GenerationError.emptyResponse }
             // Report what the tool actually said. "Not logged in" and a keychain refusal need
             // very different fixes, and guessing between them wastes the user's time.
-            let stderr = String(
-                decoding: errors.fileHandleForReading.readDataToEndOfFile(),
-                as: UTF8.self
-            ).trimmingCharacters(in: .whitespacesAndNewlines)
+            let stderr = errors.value().trimmingCharacters(in: .whitespacesAndNewlines)
             let detail = stderr.isEmpty ? "no output" : String(stderr.prefix(300))
             throw GenerationError.transport("The claude command failed (status \(process.terminationStatus)): \(detail)")
         }
@@ -178,6 +205,27 @@ struct ClaudeCLIGenerator: TextGenerating {
             return (object["result"] as? String) ?? "The claude command reported an error."
         }
         return nil
+    }
+}
+
+/// Splits a byte stream into whole lines across chunk boundaries, since a JSON object can be
+/// delivered in pieces.
+private final class LineBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var buffer = Data()
+
+    func append(_ chunk: Data) -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        buffer.append(chunk)
+        var lines: [String] = []
+        while let newline = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+            let line = Data(buffer[buffer.startIndex..<newline])
+            buffer.removeSubrange(buffer.startIndex...newline)
+            if let text = String(data: line, encoding: .utf8), !text.isEmpty {
+                lines.append(text)
+            }
+        }
+        return lines
     }
 }
 

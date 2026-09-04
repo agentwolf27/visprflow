@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Foundation
 import Synchronization
@@ -45,6 +46,8 @@ final class AudioCapture {
     nonisolated static let preRollDuration: TimeInterval = 1.0
     /// How long the engine keeps running after a dictation, ready for the next one.
     nonisolated static let lingerDuration: TimeInterval = 6
+    /// Matches the controller's hold ceiling, and sets how much room a capture reserves.
+    nonisolated static let maximumCaptureDuration: TimeInterval = 300
 
     private struct State {
         var isCapturing = false
@@ -57,7 +60,7 @@ final class AudioCapture {
         var silenceSeconds: TimeInterval = 0
     }
 
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private let state = Mutex(State())
     private let engineRunning = Mutex(false)
     private let lingerTask = Mutex<Task<Void, Never>?>(nil)
@@ -71,6 +74,60 @@ final class AudioCapture {
 
     nonisolated var silenceSeconds: TimeInterval {
         state.withLock { $0.silenceSeconds }
+    }
+
+    /// Starts listening for the events that invalidate a running engine.
+    ///
+    /// Neither of these had an observer, and both are routine. AirPods drop to 16 kHz whenever
+    /// the microphone is activated, which changes the input format underneath a running engine;
+    /// AVAudioEngine responds by stopping and uninitialising itself, and the installed tap goes
+    /// silent. Because `engineRunning` still reads true, `startEngineIfNeeded` returned early and
+    /// never reinstalled the tap, so the level meter sat at zero and every dictation came back
+    /// empty until the six-second linger happened to tear things down. Sleep and wake leave the
+    /// engine holding a stale hardware device id with the same result.
+    func observeDeviceChanges() {
+        NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.recoverEngine(reason: "the audio configuration changed")
+            }
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.recoverEngine(reason: "the machine woke")
+            }
+        }
+    }
+
+    /// Rebuilds the engine from scratch and resumes an in-flight capture.
+    ///
+    /// Restarting the existing engine is not enough: it keeps the hardware device id it resolved
+    /// at creation, which is exactly what is stale after a device change or a wake.
+    private func recoverEngine(reason: String) {
+        let wasCapturing = state.withLock { $0.isCapturing }
+        Log.audio.info("Rebuilding the audio engine because \(reason, privacy: .public); capturing=\(wasCapturing, privacy: .public)")
+
+        try? Self.catchingObjC { self.engine.inputNode.removeTap(onBus: 0) }
+        try? Self.catchingObjC { self.engine.stop() }
+        engineRunning.withLock { $0 = false }
+        engine = AVAudioEngine()
+
+        guard wasCapturing else { return }
+        // A capture is in progress, so the user is mid-sentence. Keep what was captured and
+        // carry on at whatever format the new device offers.
+        do {
+            try startEngineIfNeeded()
+            Log.audio.info("Capture resumed on the new device")
+        } catch {
+            Log.audio.error("Could not resume capture after \(reason, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Allocates engine resources without opening the microphone, so the first start is quick.
@@ -111,6 +168,11 @@ final class AudioCapture {
 
         state.withLock { state in
             state.captured = state.ring.snapshot()
+            // Reserve up front so appending on the audio thread is a memcpy rather than an
+            // amortised reallocation that copies the whole capture. A five-minute ceiling of
+            // 16 kHz mono floats is 19 MB, paid once per dictation instead of log(n) times
+            // mid-sentence.
+            state.captured.reserveCapacity(Int(Self.sampleRate * Self.maximumCaptureDuration))
             state.isCapturing = true
             state.silenceSeconds = 0
         }

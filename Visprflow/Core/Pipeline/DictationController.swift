@@ -91,6 +91,7 @@ final class DictationController {
     func start() throws {
         Log.app.info("DictationController.start: preparing audio")
         capture.prepare()
+        capture.observeDeviceChanges()
         Log.app.info("DictationController.start: audio prepared, starting monitor")
         try monitor.start()
     }
@@ -277,7 +278,12 @@ final class DictationController {
                 show(.ready(text: compiled.text, level: compiled.level, destination: destination.displayName))
                 Log.timing.info("Preview ready: \(self.trace.summary(), privacy: .public)")
             } else {
-                try await insert(compiled, transcript: transcript, destination: destination)
+                try await insert(
+                    compiled,
+                    transcript: transcript,
+                    destination: destination,
+                    intendedFor: context.bundleIdentifier
+                )
             }
 
         } catch where Self.isCancellation(error) {
@@ -353,8 +359,27 @@ final class DictationController {
     private func insert(
         _ compiled: CompiledPrompt,
         transcript: Transcript,
-        destination: Destination
+        destination: Destination,
+        intendedFor bundleIdentifier: String? = nil
     ) async throws {
+        // The text was shaped for one particular app. A compile takes seconds, and the user is
+        // free to switch windows while it runs, so paste only where the dictation was aimed.
+        // Without this, dictating into Slack and then switching to a terminal put the message
+        // into the shell.
+        if let intended = bundleIdentifier,
+           let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+           front != intended {
+            Log.insert.info("Focus moved from \(intended, privacy: .public) to \(front, privacy: .public); not inserting")
+            show(.failed(message: "Focus moved, so nothing was inserted"))
+            hide(after: 2.0)
+            record(
+                transcript: transcript,
+                compiled: compiled,
+                destination: destination,
+                status: .cancelled
+            )
+            return
+        }
         try await inserter.insert(compiled.text, strategy: destination.strategy)
         trace.mark(.inserted)
         show(.inserted(characters: compiled.text.count))
