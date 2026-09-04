@@ -1,0 +1,254 @@
+<title>Visprflow Roadmap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg:#F2F4F6; --surface:#FFF; --surface-2:#E9EDF1; --ink:#16202A; --ink-2:#3E4B59;
+    --muted:#6B7A88; --line:#D5DCE3; --line-2:#C0CAD4;
+    --accent:#0E7C7B; --accent-ink:#0A5E5D; --accent-soft:#D9EFEC;
+    --rec:#E0433D; --rec-soft:#FBE3E1; --warn:#A86A12; --warn-soft:#F8ECD4;
+    --code-bg:#1B252E; --code-ink:#E6EDF3; --code-muted:#8FA3B5;
+    --shadow:0 1px 2px rgba(22,32,42,.06),0 8px 24px rgba(22,32,42,.06);
+  }
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+    --bg:#0E1318; --surface:#151C23; --surface-2:#1C252E; --ink:#E7ECF1; --ink-2:#BCC7D2;
+    --muted:#8E9CA9; --line:#263039; --line-2:#354352;
+    --accent:#3BC1B7; --accent-ink:#7ADCD3; --accent-soft:#12302F;
+    --rec:#F0625C; --rec-soft:#3A1B1A; --warn:#E0A648; --warn-soft:#33270F;
+    --code-bg:#0A0F14; --code-ink:#DCE5EE; --code-muted:#7C8F9F;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0E1318; --surface:#151C23; --surface-2:#1C252E; --ink:#E7ECF1; --ink-2:#BCC7D2;
+    --muted:#8E9CA9; --line:#263039; --line-2:#354352;
+    --accent:#3BC1B7; --accent-ink:#7ADCD3; --accent-soft:#12302F;
+    --rec:#F0625C; --rec-soft:#3A1B1A; --warn:#E0A648; --warn-soft:#33270F;
+    --code-bg:#0A0F14; --code-ink:#DCE5EE; --code-muted:#7C8F9F;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent-ink);text-decoration:none;border-bottom:1px solid var(--line-2)}
+  a:hover{border-bottom-color:var(--accent)}
+  .page{max-width:1000px;margin:0 auto;padding:40px 24px 96px}
+  .eyebrow{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  h1{font-family:"Bricolage Grotesque",sans-serif;font-optical-sizing:auto;font-weight:800;font-size:clamp(38px,5.5vw,58px);line-height:1;letter-spacing:-.02em;margin:6px 0 0;text-wrap:balance}
+  .thesis{max-width:64ch;font-size:19px;line-height:1.45;color:var(--ink-2);margin:14px 0 0;text-wrap:balance}
+  header.masthead{padding-bottom:22px;border-bottom:1px solid var(--line)}
+  section{padding:32px 0 8px;border-top:1px solid var(--line);margin-top:24px}
+  section:first-of-type{border-top:0}
+  h2{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:28px;line-height:1.1;letter-spacing:-.015em;margin:6px 0 14px;text-wrap:balance}
+  h3{font-family:"Bricolage Grotesque",sans-serif;font-weight:600;font-size:18px;margin:26px 0 8px}
+  p{margin:0 0 14px;max-width:70ch}
+  ul,ol{max-width:70ch;padding-left:22px}
+  li{margin:6px 0}
+  li::marker{color:var(--muted)}
+  strong{font-weight:600}
+  code,.mono{font-family:"IBM Plex Mono",monospace;font-size:.9em;background:var(--surface-2);padding:1px 5px;border-radius:4px}
+  kbd{font-family:"IBM Plex Mono",monospace;font-size:.85em;padding:1px 6px 2px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:var(--surface);white-space:nowrap}
+
+  .tbl{overflow-x:auto;margin:14px 0 20px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}
+  th{font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500;background:var(--surface-2)}
+  tr:last-child td{border-bottom:0}
+  td.num,th.num{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  .tag{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:11px;padding:2px 7px;border-radius:4px;white-space:nowrap}
+  .tag.done{background:var(--accent-soft);color:var(--accent-ink)}
+  .tag.now{background:var(--warn-soft);color:var(--warn)}
+  .tag.next{background:var(--surface-2);color:var(--ink-2)}
+
+  .callout{border-left:3px solid var(--accent);background:var(--accent-soft);padding:12px 16px;border-radius:0 8px 8px 0;margin:14px 0 18px;font-size:14.5px}
+  .callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+  .callout p{margin:0;max-width:none}
+  .callout p+p{margin-top:8px}
+
+  .item{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:16px 18px;margin:12px 0}
+  .item .head{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;margin-bottom:6px}
+  .item .n{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:20px;color:var(--accent);line-height:1}
+  .item h3{margin:0;font-size:17px;flex:1;min-width:200px}
+  .item p{margin:0 0 8px;font-size:14.5px;color:var(--ink-2);max-width:none}
+  .item .why{color:var(--ink);font-size:14.5px}
+  .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .pill{font-family:"IBM Plex Mono",monospace;font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line-2);color:var(--muted)}
+
+  .verified{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:16px 0 22px}
+  .verified>div{background:var(--surface);padding:14px 16px}
+  .verified .n{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:24px;color:var(--accent-ink);font-variant-numeric:tabular-nums;line-height:1.1}
+  .verified .k{font-size:13px;color:var(--ink-2);margin-top:3px;line-height:1.35}
+  @media (max-width:640px){.verified{grid-template-columns:1fr 1fr}}
+</style>
+
+<div class="page">
+  <header class="masthead">
+    <div class="eyebrow">Roadmap · 3 September 2026 · supersedes the phase plan in plan.html</div>
+    <h1>What to build next</h1>
+    <p class="thesis">Four research agents and a full audit of the code. The headline: the speech recognition was never the problem, the app already owns a streaming engine it isn't using, and the things that made today painful are all fixed.</p>
+  </header>
+
+  <section>
+    <div class="eyebrow">Today</div>
+    <h2>What got fixed while researching</h2>
+    <p>Every one of these was found by the audit or hit in use today. All are committed and installed.</p>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Bug</th><th>What it did to you</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Audio tap crashed the app</strong></td><td>The mic tap block inherited main-actor isolation and trapped on the realtime thread. It killed the app on <em>every</em> recording, whatever key you chose.</td></tr>
+          <tr><td><strong>Right Option never worked</strong></td><td>The flag bit was <code>0x40000</code>; macOS sets <code>0x40</code>. The key could never register.</td></tr>
+          <tr><td><strong>Left Shift was selectable</strong></td><td>Every capital letter started a dictation. Shift five times also toggles Sticky Keys.</td></tr>
+          <tr><td><strong>The recorder stayed armed</strong></td><td>Closing the setup window mid-record left it swallowing the next key typed anywhere, silently making it your trigger.</td></tr>
+          <tr><td><strong>Cancelled dictations stomped live ones</strong></td><td>Cancellation arrives as <code>GenerationError.cancelled</code>, so the guard never matched; a superseded dictation wiped the newer one's preview.</td></tr>
+          <tr><td><strong>Failed paste destroyed the clipboard</strong></td><td>The pasteboard was cleared before the chord; a throw left nothing put back.</td></tr>
+          <tr><td><strong>Probes could hang forever</strong></td><td><code>availableData</code> blocks, so the timeout never fired. A stuck <code>osascript</code> froze a dictation on "Transcribing…" and leaked a thread.</td></tr>
+          <tr><td><strong>Recording had no ceiling</strong></td><td>A missed key-up recorded forever at ~64 MB/hour, and under Secure Input even Escape couldn't stop it.</td></tr>
+          <tr><td><strong>Permissions reset every build</strong></td><td>Ad-hoc signing meant every rebuild looked like a new app. A stable certificate fixed it for good.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">The finding that changes the plan</div>
+    <h2>We already own a streaming engine</h2>
+    <div class="callout">
+      <p><strong>FluidAudio 0.15.6 — already pinned in <code>Package.resolved</code> — ships true cache-aware streaming ASR.</strong> Read directly from the checkout in our own build tree, not from docs: <code>StreamingUnifiedAsrManager</code> at 320 ms chunks, <code>StreamingEouAsrManager</code> at 160 ms, and a two-tier volatile/confirmed <code>SlidingWindowAsrManager</code>. No dependency bump, no model swap.</p>
+      <p>Today the pipeline is strictly serial: <code>DictationController.run()</code> transcribes only after <code>capture.stop()</code>. Every second you spend speaking is idle compute.</p>
+    </div>
+    <p>Two corrections worth recording before anyone writes code against it: <code>StreamingAsrManager</code> is a <em>protocol</em>, not a class, and the published docs' <code>.ms1600</code> is really <code>.ms1280</code> and will not compile.</p>
+    <p>It also exposes <code>configureVocabularyBoosting</code>, which means the repository vocabulary could bias recognition at the acoustic layer instead of only telling the rewriter how to spell things afterwards. "aut midway" would come back as "auth middleware" rather than being repaired.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Where the time actually goes</div>
+    <h2>Latency, measured</h2>
+    <p>An independent benchmark measured recording-end to visible text, median of twenty trials on one Mac:</p>
+    <div class="verified">
+      <div><div class="n">123 ms</div><div class="k">Talkify</div></div>
+      <div><div class="n">216 ms</div><div class="k">Superwhisper</div></div>
+      <div><div class="n">324 ms</div><div class="k">VoiceInk</div></div>
+      <div><div class="n">587 ms</div><div class="k">Wispr Flow</div></div>
+      <div><div class="n">630 ms</div><div class="k">Aqua Voice</div></div>
+    </div>
+    <p>Our transcription is ~80 ms for ten seconds of audio, roughly 125× realtime, well under the threshold where anything feels instantaneous. <strong>The perceived latency is entirely the rewrite.</strong> The default compile path spawns a <code>claude</code> process per dictation, which our own settings screen honestly labels "3–10 s".</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Plan</div>
+    <h2>Ordered by what you would feel</h2>
+
+    <h3>Now — a day's work, all low risk</h3>
+
+    <div class="item">
+      <div class="head"><span class="n">1</span><h3>Stop clearing the pre-roll ring on engine start</h3></div>
+      <p class="why">A one-line bug that defeats the feature built to stop first-word clipping. <code>startEngineIfNeeded</code> calls <code>ring.removeAll()</code>, so a cold start has zero pre-roll and the ring only helps within the 6 s linger window.</p>
+      <p>Also raise pre-roll from 0.5 s to 1.0 s. That is 64 KB of memory.</p>
+      <div class="meta"><span class="pill">S</span><span class="pill">first-word clipping</span></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><span class="n">2</span><h3>Post-roll tail after key-up</h3></div>
+      <p class="why">Tap buffers lag the wall clock by a buffer period, so <code>capture.stop()</code> truncates the last word. Superwhisper shipped exactly this fix: "delay before stopping recording to avoid losing last word".</p>
+      <p>Make <code>stop()</code> async and await ~120 ms of further tap delivery before snapshotting.</p>
+      <div class="meta"><span class="pill">S</span><span class="pill">trailing-word loss</span></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><span class="n">3</span><h3>Warm-up inference and GPU encoder placement</h3></div>
+      <p class="why"><code>warmUp()</code> loads the model but never runs one, so the first dictation after launch pays Core ML compilation and ANE scheduling. Transcribe 0.3 s of silence and throw it away.</p>
+      <p>Separately, <code>encoderComputeUnits: .cpuAndGPU</code> is ~8% faster and WER-neutral per FluidAudio's own benchmark. One argument.</p>
+      <div class="meta"><span class="pill">S</span><span class="pill">first-run spike</span></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><span class="n">4</span><h3>Trap the uncatchable exceptions</h3></div>
+      <p class="why">We already lost hours to one of these: <code>AVAudioEngine.prepare()</code> throws <code>NSException</code>, which unwinds past Swift's <code>catch</code> and dies silently. A tiny Objective-C shim with <code>@try/@catch</code> around <code>installTap</code>, <code>prepare</code> and <code>start</code> turns a silent death into a recoverable error.</p>
+      <div class="meta"><span class="pill">S</span><span class="pill">silent failure</span></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><span class="n">5</span><h3>Runtime guard against a bad trigger key</h3></div>
+      <p class="why">If the trigger fires more than five times in ten seconds with sub-300 ms recordings, say so: "this key looks like it's firing while you type — change it?" This would have caught the Left Shift choice in seconds rather than after a crash.</p>
+      <div class="meta"><span class="pill">S</span><span class="pill">would have caught today's bug</span></div>
+    </div>
+
+    <h3>Next — robustness</h3>
+
+    <div class="item">
+      <div class="head"><span class="n">6</span><h3>Audio device and wake recovery</h3></div>
+      <p class="why">There is no <code>AVAudioEngineConfigurationChange</code> observer and no wake observer anywhere in the project. Connect AirPods mid-session and the level meter reads zero with no error; the format mismatch raises an uncatchable exception. AirPods make this routine because they drop to 16 kHz whenever the mic is active.</p>
+      <p>Rebuild the engine outright rather than restarting it — a stale HAL device ID survives a restart.</p>
+      <div class="meta"><span class="pill">M</span><span class="pill">silent dead mic</span></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><span class="n">7</span><h3>Pin the paste target captured at record start</h3></div>
+      <p class="why">Non-preview destinations paste into whatever app is focused when the compile lands. Dictate into Slack, switch to Terminal during a 6 s compile, and your message goes into the shell.</p>
+      <p>Worth doing well: both major open-source apps <em>declined</em> this on scope grounds, and users describe the failure as making the tool "feel fragile". It is the clearest differentiation available.</p>
+      <div class="meta"><span class="pill">M</span><span class="pill">text in the wrong app</span></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><span class="n">8</span><h3>Get allocations off the audio thread</h3></div>
+      <p class="why"><code>consume()</code> allocates a buffer per callback and appends to a growing array under a lock the main actor contends 30 times a second. Preallocate and reserve capacity, or hand buffers straight to the streaming manager once item 10 lands.</p>
+      <div class="meta"><span class="pill">M</span><span class="pill">dropouts</span></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><span class="n">9</span><h3>Fix the CLI provider's blocking and deadlock</h3></div>
+      <p class="why">It parks a cooperative thread for the whole 6–10 s, ignores cancellation until the blocking read returns, and can deadlock when a chatty stderr fills the 64 KB pipe buffer while we block on stdout.</p>
+      <div class="meta"><span class="pill">M</span><span class="pill">hang</span></div>
+    </div>
+
+    <h3>Then — the rearchitecture that makes it fast</h3>
+
+    <div class="item">
+      <div class="head"><span class="n">10</span><h3>Stream transcription while you speak</h3></div>
+      <p class="why">Add a streaming transcriber behind the existing <code>Transcriber</code> protocol, which already anticipates this. Feed each buffer to <code>appendAudio</code>, wire the partial callback to the overlay, call <code>finish()</code> on key-up.</p>
+      <p>Text appears while you talk, and key-up to transcript drops to near zero. Show partials in <em>our</em> overlay, never in the target field — retracting text you already inserted is unreliable in exactly the apps that refuse AX insertion.</p>
+      <div class="meta"><span class="pill">L</span><span class="pill">the big one</span></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><span class="n">11</span><h3>Speculative compile on a stable prefix</h3></div>
+      <p class="why">Once partials exist, start the rewrite when the transcript stops changing for ~300 ms. On key-up, keep the in-flight result if the final matches, otherwise cancel and restart. This is Alexa's dual-endpointer pattern, and our cancellation plumbing already has the right shape.</p>
+      <p>Hides most of the rewrite latency behind you still talking. Gate it to the API provider so a mismatch wastes tokens rather than seconds.</p>
+      <div class="meta"><span class="pill">M</span><span class="pill">hides the rewrite</span></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><span class="n">12</span><h3>Vocabulary boosting at the acoustic layer</h3></div>
+      <p class="why">Feed the repository vocabulary to <code>configureVocabularyBoosting</code> so technical terms are recognised correctly rather than repaired afterwards.</p>
+      <div class="meta"><span class="pill">M</span><span class="pill">technical accuracy</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Decided against</div>
+    <h2>Two things not to build</h2>
+    <p><strong>Raw-first insertion.</strong> Inserting the verbatim transcript then replacing it with the polished version only works where the field can be read back and verified through the accessibility API — which fails in terminals, Electron apps and web views, the exact places we care about. Synthesized backspaces race with your own typing. The preview flow already solves this honestly.</p>
+    <p><strong>Tuning the clipboard restore delay.</strong> The definitive analysis in Handy's tracker puts it plainly: "any fixed delay has a lag that beats it." Our inserter already verifies with a read receipt before restoring, which is the correct design and better than most shipping competitors. Leave it alone.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Reference</div>
+    <h2>Trigger keys, settled</h2>
+    <p>Recommended default is <strong>hold Right Option</strong>, double-tap to lock. It is a modifier, so it keeps firing under Secure Event Input where letters and Space die; it types nothing; and it leaves Left Option free for accented characters.</p>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Refuse</th><th>Reason</th></tr></thead>
+        <tbody>
+          <tr><td>Shift (either)</td><td>Types every capital; five presses toggle Sticky Keys</td></tr>
+          <tr><td>Caps Lock</td><td>A toggle, not a hold; often already remapped</td></tr>
+          <tr><td>Letters, digits, Space, Return, Tab, Delete</td><td>Destroys typing, and blocked under Secure Input</td></tr>
+          <tr><td>Left Command</td><td>The primary shortcut modifier for every app</td></tr>
+          <tr><td>F11</td><td>Show Desktop; macOS reserves it even when disabled</td></tr>
+          <tr><td>Escape</td><td>Already cancels a dictation</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Warn but allow: Left Option (five presses toggle Mouse Keys), Control (collides with macOS Dictation's double-tap), fn (the Globe setting and Sequoia's Globe layer). Timing constants worth matching: 400 ms double-tap window, 300 ms minimum press, 5 minute safety ceiling — all three now match the code.</p>
+  </section>
+</div>
