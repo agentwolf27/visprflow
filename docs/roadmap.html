@@ -94,12 +94,12 @@
   <header class="masthead">
     <div class="eyebrow">Roadmap · written 3 September 2026 · outcomes recorded 8 September 2026</div>
     <h1>What to build next</h1>
-    <p class="thesis">Four research agents and a full audit of the code. All twelve items have now been built, or built and reversed, or found not to exist. This page keeps both halves: what was proposed, and what happened when it met the compiler.</p>
+    <p class="thesis">Four research agents and a full audit of the code. All twelve items have now met the compiler: nine shipped, two withdrawn, and two of the nine partly reversed once somebody measured them. The largest finding came from measuring one of our own optimisations — it was costing 1.2&nbsp;GB and making transcription slower.</p>
     <div class="verified" style="margin-top:22px">
-      <div><div class="n">9</div><div class="k">shipped and in use</div></div>
-      <div><div class="n">1</div><div class="k">built, measured, reversed</div></div>
-      <div><div class="n">2</div><div class="k">withdrawn — premise was wrong</div></div>
-      <div><div class="n">1251 MB</div><div class="k">what it cost in memory</div></div>
+      <div><div class="n">1251 → 40 MB</div><div class="k">idle memory, measured in the running app</div></div>
+      <div><div class="n">306 → 143 ms</div><div class="k">transcribing 4.9 s of speech</div></div>
+      <div><div class="n">9 of 12</div><div class="k">roadmap items shipped</div></div>
+      <div><div class="n">10</div><div class="k">further defects found and fixed</div></div>
     </div>
   </header>
 
@@ -147,7 +147,7 @@
       <div><div class="n">587 ms</div><div class="k">Wispr Flow</div></div>
       <div><div class="n">630 ms</div><div class="k">Aqua Voice</div></div>
     </div>
-    <p>Our transcription is ~80 ms for ten seconds of audio, roughly 125× realtime, well under the threshold where anything feels instantaneous. <strong>The perceived latency is entirely the rewrite.</strong> The default compile path spawns a <code>claude</code> process per dictation, which our own settings screen honestly labels "3–10 s".</p>
+    <p>Our transcription is well under the threshold where anything feels instantaneous — measured on the release build, 208 ms for 14.1 s of speech, roughly 68× realtime. (An earlier “~80 ms, 125× realtime” on this page came from a vendor figure; the number above is ours, from <code>make verify-stt</code>.) <strong>The perceived latency is entirely the rewrite.</strong> The default compile path spawns a <code>claude</code> process per dictation, which our own settings screen honestly labels "3–10 s".</p>
   </section>
 
   <section>
@@ -226,7 +226,7 @@
       <p class="why">Add a streaming transcriber behind the existing <code>Transcriber</code> protocol, which already anticipates this. Feed each buffer to <code>appendAudio</code>, wire the partial callback to the overlay, call <code>finish()</code> on key-up.</p>
       <p>Text appears while you talk, and key-up to transcript drops to near zero. Show partials in <em>our</em> overlay, never in the target field — retracting text you already inserted is unreliable in exactly the apps that refuse AX insertion.</p>
       <div class="meta"><span class="pill">L</span><span class="pill">the big one</span></div>
-      <p class="verdict"><strong>Built, then half of it reversed on measurement.</strong> The overlay shows words as you speak — 16 partials on one sentence, the tail intact, clean between dictations. But the final transcript stays with the batch model. Streaming heard <em>“first message about the passer”</em> for “parser”, and the batch model does ten seconds of audio in about 80&nbsp;ms. Preferring the streamed text buys a saving nobody can perceive at a cost you can read. For a tool whose whole job is an exact prompt, that trade is backwards.</p>
+      <p class="verdict"><strong>Built, then half of it reversed on measurement.</strong> The overlay shows words as you speak — 16 partials on one sentence, the tail intact, clean between dictations. But the final transcript stays with the batch model. Streaming heard <em>“first message about the passer”</em> for “parser”, and the batch model does 4.9&nbsp;s of audio in 143&nbsp;ms — a fifth of a second, once, at the end. Preferring the streamed text buys a saving nobody can perceive at a cost you can read. For a tool whose whole job is an exact prompt, that trade is backwards.</p>
     </div>
 
     <div class="item">
@@ -263,6 +263,7 @@
       </table>
     </div>
     <p class="verdict"><strong>The Neural Engine is ninety-four times lighter and twice as fast.</strong> The 8% went the other way on this hardware. The encoder moved back, and <code>make verify-memory</code> now measures what we actually ship, with a ceiling that fails the build if the batch model creeps past 300 MB of our own heap. The comparison is still one command away — <code>VISPRFLOW_ENCODER=gpu make verify-memory</code> — so nobody has to take this on faith.</p>
+    <p class="verdict"><strong>Confirmed on the rebuilt app, not just in a test:</strong> phys_footprint <strong>40 MB</strong>, peak 74 MB, with <code>MALLOC_MEDIUM</code> down from 1161 MB to 11 MB. The model's weights now sit in the Neural Engine's own region where they belong. That is inside the 50–150 MB the plan budgeted, and a thirty-first of what the app was holding this morning.</p>
     <p>Separately, the streaming model from item 10 is now released after ten minutes without a dictation, which returns its share of the Neural Engine's allocation. Reloading is automatic, and every failure path in that code already falls through to the batch transcript, so the worst case is a dictation without a live preview — never a lost prompt.</p>
     <div class="callout warn">
       <p><strong>The build report's “6 MB idle memory” was wrong, and has been corrected.</strong> It came from <code>ps rss</code>, which counts neither Core ML's weight buffers nor the Neural Engine's allocation, and it was read before any model had loaded. The right tool is <code>footprint(1)</code>; the right moment is after a dictation. That is how a headline number ends up off by a factor of two hundred — and why the memory figures on this page are produced by a test, not by a person with a terminal.</p>
