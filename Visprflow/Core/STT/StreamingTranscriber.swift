@@ -23,9 +23,20 @@ actor StreamingTranscriber {
     /// new to decode; far above it and the partials lag the speaker.
     static let drainInterval: Duration = .milliseconds(250)
 
+    /// How long the model stays loaded after the last dictation.
+    ///
+    /// It is not free to keep: the streaming model is a second 0.6B Parakeet, about 580 MB on
+    /// disk and roughly that resident, on top of the batch model that produces the actual
+    /// transcript. Holding half a gigabyte so that a preview is instant for someone who has not
+    /// dictated in ten minutes is the exact complaint this app makes about Wispr Flow. Giving it
+    /// back costs only the preview — a reload is automatic, and every failure path here already
+    /// falls through to the batch transcript.
+    static let idleLifetime: Duration = .seconds(600)
+
     private var manager: (any StreamingAsrManager)?
     private var loadTask: Task<any StreamingAsrManager, Error>?
     private var session: Task<Void, Never>?
+    private var idleUnload: Task<Void, Never>?
 
     /// The format the samples arrive in, matching `AudioCapture`'s converter output.
     private let format = AVAudioFormat(
@@ -70,6 +81,8 @@ actor StreamingTranscriber {
         draining capture: AudioCapture,
         onPartial: @escaping @Sendable (String) -> Void
     ) async throws {
+        idleUnload?.cancel()
+        idleUnload = nil
         let manager = try await prepare()
         try await manager.reset()
         await manager.setPartialTranscriptCallback(onPartial)
@@ -142,6 +155,7 @@ actor StreamingTranscriber {
         session?.cancel()
         session = nil
         try? await manager?.reset()
+        scheduleUnload()
     }
 
     /// Abandons the session without producing a transcript.
@@ -149,6 +163,28 @@ actor StreamingTranscriber {
         session?.cancel()
         session = nil
         try? await manager?.reset()
+        scheduleUnload()
     }
 
+    /// Releases the model once the user has stopped dictating for a while.
+    private func scheduleUnload() {
+        idleUnload?.cancel()
+        idleUnload = Task { [weak self] in
+            try? await Task.sleep(for: Self.idleLifetime)
+            guard !Task.isCancelled else { return }
+            await self?.unload()
+        }
+    }
+
+    /// Drops the model. The next dictation loads it again.
+    func unload() {
+        guard manager != nil || loadTask != nil else { return }
+        session?.cancel()
+        session = nil
+        loadTask?.cancel()
+        loadTask = nil
+        manager = nil
+        idleUnload = nil
+        Log.stt.info("Streaming model unloaded after an idle spell")
+    }
 }

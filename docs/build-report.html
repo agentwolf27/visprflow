@@ -125,7 +125,7 @@
   <header class="masthead">
     <div class="eyebrow">Overnight build · 3 September 2026 · 02:20 to 11:05</div>
     <h1>Visprflow Overnight Build</h1>
-    <p class="thesis">Phases 0 through 3 are built, audited and installed. The app runs, transcribes on-device, and idles at 6 MB. Three permission dialogs are waiting for you, and only you can click them.</p>
+    <p class="thesis">Phases 0 through 3 are built, audited and installed. The app runs, transcribes on-device, and idles at 40 MB. Three permission dialogs are waiting for you, and only you can click them.</p>
   </header>
 
   <div class="first">
@@ -151,13 +151,17 @@
     <div class="verified">
       <div><div class="n">177</div><div class="k">unit tests passing</div></div>
       <div><div class="n">100%</div><div class="k">word recall transcribing a spoken sentence</div></div>
-      <div><div class="n">441 ms</div><div class="k">to transcribe 14 seconds of speech</div></div>
-      <div><div class="n">6 MB</div><div class="k">idle memory, against Wispr Flow's ~800 MB</div></div>
+      <div><div class="n">208 ms</div><div class="k">to transcribe 14 seconds of speech</div></div>
+      <div><div class="n">40 MB</div><div class="k">idle memory, remeasured properly on 8 Sep</div></div>
+    </div>
+    <div class="callout">
+      <p><strong>Correction, 8 September 2026: the “6 MB idle memory” claimed here was wrong.</strong> It came from <code>ps rss</code>, which counts neither Core ML's weight buffers nor the Neural Engine's allocation, and it was read before any model had loaded. Measured properly with <code>footprint(1)</code>, the shipped build was holding <strong>1251 MB</strong>, peak 1385 MB. The cause was placing the speech encoder on the GPU, where its weights are Metal buffers in the app's own heap; on the Neural Engine the same model costs 16 MB in-process and transcribes twice as fast. That is now the default: the rebuilt app idles at <strong>40 MB</strong>, inside the 50–150 MB the plan budgeted, and <code>make verify-memory</code> measures it on every run rather than leaving it to a person with a terminal.</p>
     </div>
     <p>The speech pipeline is verified end to end without a microphone. Audio is synthesised with the built-in <code>say</code> command, run through the same resampling path as live capture, and transcribed by the real model. That gives known ground truth and needs no permission. Three seconds of silence produced no words at all, which is the hallucination failure Whisper is known for.</p>
     <p>What I could not verify is anything that needs a permission dialog: holding the key, capturing from the microphone, and pasting into another app. Those paths are built and unit-tested, but the first real end-to-end dictation will be yours.</p>
     <div class="callout">
-      <p><strong>One measured gap.</strong> Transcription ran at 32× real time, not the 190× the vendor benchmarks claim. That is a debug build under a test host with a cold Neural Engine. For a ten-second dictation it means roughly 310 ms rather than the 80 ms the plan budgeted. Still fast enough to feel instant, and worth re-measuring in the release build.</p>
+      <p><strong>One measured gap — since closed.</strong> Transcription ran at 32× real time, not the 190× the vendor benchmarks claim: a debug build under a test host with a cold Neural Engine, roughly 310 ms for a ten-second dictation against the 80 ms the plan budgeted.</p>
+      <p><strong>Resolved 8 September.</strong> Part of it was the encoder placement described above. On the Neural Engine the same suite now transcribes 14.1 s of speech in <strong>208 ms</strong> — 68× real time — where it took 441 ms before. The figures in this section have been updated to that run.</p>
     </div>
   </section>
 

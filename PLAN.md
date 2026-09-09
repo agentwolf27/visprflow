@@ -3,7 +3,7 @@
 <!-- pulse -->
 
 ## What we are building
-Visprflow is a native macOS menu bar app that replaces the fn key's emoji picker with a full dictation-to-prompt pipeline: hold fn, talk, release, and the app transcribes on-device with Parakeet v3, then compiles the raw speech into the best-suited prompt for wherever the cursor is (Claude Code, Cursor, claude.ai, Slack, email, or a plain shell), inserting it with a preview step for agent destinations.
+Visprflow is a native macOS menu bar app that takes over the fn key (once macOS's emoji picker on that key is set to Do Nothing) for a full dictation-to-prompt pipeline: hold fn, talk, release, and the app transcribes on-device with Parakeet v3, then compiles the raw speech into the best-suited prompt for wherever the cursor is (Claude Code, Cursor, claude.ai, Slack, email, or a plain shell), inserting it with a preview step for agent destinations.
 
 ## Why
 Existing dictation tools like Wispr Flow are cloud-only, heavy (800 MB idle), unreliable, and produce generic cleaned-up text rather than a structured prompt tailored to the destination app and its context.
@@ -16,14 +16,24 @@ Tick one only when its VERIFY passes, not when someone says it is done.
 - [x] Hold-to-talk loop with on-device Parakeet v3 transcription and paste-back — `make verify-stt`
 - [x] Prompt compiler with destination detection, guardrails, raw fallback — `make test`
 - [x] Repository vocabulary and workspace context harvesting — `make test`
-- [x] 177 unit tests pass and app installed at ~/Applications — `make test`
-- [x] Audit fixes: crash, key-mapping, clipboard, probe-hang bugs resolved
-- [ ] Streaming cloud/on-device ASR replaces serial capture-then-transcribe pipeline
-- [x] Now-tier latency fixes: pre-roll, post-roll, warm-up, exception trapping
-- [x] Next-tier robustness: device/wake recovery, pinned paste target, hung CLI handling
-- [ ] Groq added as a faster rewrite provider
+- [x] The unit test suite passes (README cites 177; not independently counted) — `make test`
+- [x] Audit fixes: crash trap, Right-Option key mapping, clipboard restore, probe hang — `test -f Visprflow/Core/Audio/ObjCException.m`
+- [x] Live streaming transcript preview while speaking — `test -f Visprflow/Core/STT/StreamingTranscriber.swift`
+- [-] Streamed transcript replaces the batch model — evaluated in 14f55cf and declined: accuracy wins a trade that costs 80 ms
+- [x] Now-tier latency fixes: pre-roll, post-roll, warm-up, exception trapping — `grep -q postRollDuration Visprflow/Core/Audio/AudioCapture.swift`
+- [x] Next-tier robustness: device/wake recovery, pinned paste target, hung CLI handling — `grep -q observeDeviceChanges Visprflow/Core/Audio/AudioCapture.swift`
+- [x] Second audit sweep: overlay retain cycle, timer run-loop modes, tap port, preview lifetime — `grep -q "HUDHost(box:" Visprflow/Core/Pipeline/DictationController.swift`
+- [x] The streaming model is released when idle, so its 580 MB comes back — `grep -q idleLifetime Visprflow/Core/STT/StreamingTranscriber.swift`
+- [x] The speech model costs under 300 MB of our own heap, not 1.2 GB — `make verify-memory`
+- [ ] The 40-item golden set exercised end to end (plan.html's phase-2 bar; 8 fixtures today) — `test "$(find Fixtures/golden -name '*.json' | wc -l)" -ge 40`
+
+## Later
+
+From plan.html's phases 3–5. docs/roadmap.html supersedes that plan and, with its twelve items shipped or declined, queues none of these yet.
+
+- [ ] Groq added as a faster rewrite provider — `grep -rq GroqGenerator Visprflow/Core/Compile`
 - [ ] Selected text and screen OCR available as compiler context
-- [ ] Notarised release with Sparkle auto-updates shipped
+- [ ] Notarised release with Sparkle auto-updates shipped — `grep -q Sparkle project.yml`
 
 ## Out of scope
 - Uploading raw audio to any cloud service by default (on-device transcription is the default)

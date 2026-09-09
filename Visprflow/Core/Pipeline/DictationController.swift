@@ -23,6 +23,8 @@ final class DictationController {
     @ObservationIgnored private let monitor: HotkeyMonitor
     @ObservationIgnored private let settings: DestinationSettings
     @ObservationIgnored private var panel: HUDPanel?
+    /// Weak handle to self, shared by the hotkey callback and the overlay's root view.
+    @ObservationIgnored private let selfBox: ControllerBox
 
     @ObservationIgnored private var trace = Trace()
     @ObservationIgnored private var startedAt: Date?
@@ -86,6 +88,7 @@ final class DictationController {
                 box.controller?.handle(action)
             }
         }
+        self.selfBox = box
         box.controller = self
     }
 
@@ -269,6 +272,11 @@ final class DictationController {
     }
 
     private func run(samples: [Float], modifiers: GestureModifiers) async {
+        // Snapshot both before the first suspension. `contextTask` and `capturedContext` are
+        // replaced by the next key-down, so reading them after transcription can hand this
+        // dictation the workspace of the one that superseded it.
+        let contextForThisRun = contextTask
+        let fallbackContext = capturedContext
         do {
             // The streaming model runs alongside the capture purely to show words as they are
             // spoken. The final transcript comes from the batch model, deliberately.
@@ -281,7 +289,7 @@ final class DictationController {
             await streaming.stop()
             let transcript = try await transcriber.transcribe(samples: samples, hints: .none)
             trace.mark(.transcriptReady)
-            let context = await contextTask?.value ?? capturedContext
+            let context = await contextForThisRun?.value ?? fallbackContext
             let destination = settings.apply(to: DestinationResolver.resolve(context))
 
             guard !transcript.isEmpty else {
@@ -431,22 +439,23 @@ final class DictationController {
         switch key {
         case .insert:
             clearPending()
-            // The compiled text was shaped for a particular app. If focus moved while the
-            // preview was up, inserting it now would paste a prompt into the wrong window.
-            let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-            guard front == nil || pending.bundleIdentifier == nil || front == pending.bundleIdentifier else {
-                Log.insert.info("Focus moved while the preview was up; not inserting")
-                show(.failed(message: "Focus moved, so nothing was inserted"))
-                hide(after: 2.0)
-                return
-            }
+            // The compiled text was shaped for a particular app, and the preview may have sat
+            // there while the user switched windows. `insert` re-checks the frontmost app
+            // immediately before pasting — a narrower window than checking here — and records
+            // the abandoned prompt in history rather than dropping it silently.
+            //
+            // Deliberately not held in `activeWork`. Insertion is chunked and sleeps between
+            // chunks, so those sleeps are cancellation points: letting the next dictation
+            // cancel this would leave half a prompt in the editor and the clipboard
+            // unrestored. Once a paste has started it must be allowed to finish.
             Task { [weak self] in
                 guard let self else { return }
                 do {
                     try await self.insert(
                         pending.compiled,
                         transcript: pending.transcript,
-                        destination: pending.destination
+                        destination: pending.destination,
+                        intendedFor: pending.bundleIdentifier
                     )
                 } catch {
                     self.report(error)
@@ -495,6 +504,9 @@ final class DictationController {
                 var updated = pending
                 updated.compiled = compiled
                 self.pending = updated
+                // The preview is being used, so give it a fresh 90 s. Otherwise a few level
+                // changes run the original deadline out mid-decision and the prompt vanishes.
+                self.startPreviewTimeout()
                 self.show(.ready(
                     text: compiled.text,
                     level: compiled.level,
@@ -597,8 +609,8 @@ final class DictationController {
     private func show(_ state: HUDState) {
         hud = state
         if panel == nil {
-            panel = HUDPanel { [weak self] in
-                HUDHost(controller: self)
+            panel = HUDPanel { [selfBox] in
+                HUDHost(box: selfBox)
             }
         }
         panel?.present()
@@ -621,7 +633,7 @@ final class DictationController {
 
     private func startMeter() {
         meterTimer?.invalidate()
-        meterTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let locked = self.monitor.isLocked
@@ -644,6 +656,12 @@ final class DictationController {
                 }
             }
         }
+        // Common modes, not the default one. While a menu is open or a window is being
+        // dragged the main run loop is in tracking mode and a default-mode timer stops firing
+        // — which would freeze the meter, and, far worse, suspend the silence detector and
+        // the hold ceiling: the two things that end a dictation nobody is watching.
+        RunLoop.main.add(timer, forMode: .common)
+        meterTimer = timer
     }
 
     private func stopMeter() {
@@ -658,10 +676,16 @@ private final class ControllerBox: @unchecked Sendable {
 }
 
 /// Bridges the observable controller into the panel's SwiftUI content.
+///
+/// The reference is weak, through the box, and has to be. The controller owns the panel, the
+/// panel's hosting view owns this root view: a strong reference here closes that loop and
+/// neither object is ever released, taking the audio engine and the event tap with them.
+/// Observation is unaffected, because `hud` is read inside `body`, which is exactly where
+/// `@Observable` registers the dependency.
 private struct HUDHost: View {
-    let controller: DictationController?
+    let box: ControllerBox
 
     var body: some View {
-        HUDView(state: controller?.hud ?? .hidden)
+        HUDView(state: box.controller?.hud ?? .hidden)
     }
 }
