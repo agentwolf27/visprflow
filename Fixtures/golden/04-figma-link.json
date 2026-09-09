@@ -1,0 +1,9 @@
+{
+  "id": "figma-link",
+  "destination": "message",
+  "level": "LIGHT",
+  "transcript": "hey um can you send me the the figma link when you get a sec, no rush",
+  "expected": "hey, can you send me the figma link when you get a sec? no rush",
+  "mustContain": [],
+  "notes": "Register preserved: lowercase, casual, no greeting added, no formalising."
+}

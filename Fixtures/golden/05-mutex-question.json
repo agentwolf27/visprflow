@@ -1,0 +1,9 @@
+{
+  "id": "mutex-question",
+  "destination": "chat",
+  "level": "LIGHT",
+  "transcript": "what's the difference between a mutex and a semaphore",
+  "expected": "What's the difference between a mutex and a semaphore?",
+  "mustContain": [],
+  "notes": "The assistant reflex: the rewriter must not answer this."
+}

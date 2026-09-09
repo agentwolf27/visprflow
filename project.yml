@@ -1,0 +1,102 @@
+# XcodeGen project definition. Regenerate the .xcodeproj with `make gen`.
+# The .xcodeproj is git-ignored; this file is the source of truth.
+name: Visprflow
+
+options:
+  bundleIdPrefix: com.vish
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    # Signed with a self-signed identity created by scripts/create-signing-identity.sh.
+    # This is not cosmetic: an ad-hoc signature ("-") gives the app no stable identity, so
+    # macOS records every permission grant against the exact bytes of the binary and each
+    # rebuild wipes Microphone, Accessibility and the rest. A fixed certificate means the
+    # grants survive. Falls back to ad-hoc when the certificate is absent, so a fresh clone
+    # still builds.
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "Visprflow Dev"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+    SWIFT_STRICT_CONCURRENCY: complete
+    # Objective-C exceptions cannot be caught from Swift, and AVFoundation raises them.
+    SWIFT_OBJC_BRIDGING_HEADER: Visprflow/Visprflow-Bridging-Header.h
+    # Apple Silicon only. Parakeet runs on the Neural Engine, and FluidAudio's Float16 paths
+    # do not compile for x86_64, which a Release build would otherwise try to produce.
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+packages:
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio
+    from: "0.15.6"
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: "1.10.0"
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    from: "7.11.1"
+
+targets:
+  Visprflow:
+    type: application
+    platform: macOS
+    sources:
+      - path: Visprflow
+    dependencies:
+      - package: FluidAudio
+      - package: KeyboardShortcuts
+      - package: GRDB
+        product: GRDB
+    info:
+      path: Visprflow/Info.plist
+      properties:
+        CFBundleDisplayName: Visprflow
+        CFBundleName: Visprflow
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "15.0"
+        # Menu bar only: no Dock icon, no app menu.
+        LSUIElement: true
+        NSMicrophoneUsageDescription: "Visprflow records your voice while you hold the fn key. Audio is transcribed on this Mac and never uploaded."
+        NSAppleEventsUsageDescription: "Visprflow asks your browser for the current page address so it can tell claude.ai from Slack."
+        NSSpeechRecognitionUsageDescription: "Visprflow can use Apple's on-device speech recognition on macOS 26 and later."
+        NSHumanReadableCopyright: "© 2026 Vish"
+    entitlements:
+      path: Visprflow/Visprflow.entitlements
+      properties:
+        com.apple.security.device.audio-input: true
+        com.apple.security.automation.apple-events: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vish.visprflow
+        PRODUCT_NAME: Visprflow
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+    scheme:
+      testTargets:
+        - VisprflowTests
+      gatherCoverageData: false
+
+  VisprflowTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: VisprflowTests
+      - path: Fixtures
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: Visprflow
+      - package: GRDB
+        product: GRDB
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vish.visprflow.tests
+        GENERATE_INFOPLIST_FILE: YES

@@ -20,3 +20,10 @@ xcuserdata/
 
 # Secrets never live in the repo
 *.env
+graphify-out/
+
+# Generated knowledge graph
+graphify-out/
+
+# XcodeGen cache
+.xcodegen-cache
