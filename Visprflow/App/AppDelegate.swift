@@ -97,13 +97,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Polls until the permissions are granted, then starts listening and stops polling.
+    ///
+    /// The interval backs off. Someone granting permissions is in System Settings right now, so
+    /// the first minute is checked briskly; after that the app may sit for hours on a machine
+    /// where the user never intends to grant anything, and a 1.5 s timer forever is a wakeup
+    /// every 1.5 s forever.
     private func watchForPermissions() {
         permissionPoll?.invalidate()
-        permissionPoll = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+        schedulePermissionPoll(every: 1.5, until: Date().addingTimeInterval(60))
+    }
+
+    private func schedulePermissionPoll(every interval: TimeInterval, until: Date) {
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.state.refreshPermissions()
-                guard self.state.permissions.allGranted, !self.state.isListening else { return }
+                guard self.state.permissions.allGranted, !self.state.isListening else {
+                    if Date() >= until, interval < 15 {
+                        self.permissionPoll?.invalidate()
+                        self.schedulePermissionPoll(
+                            every: 15,
+                            until: .distantFuture
+                        )
+                    }
+                    return
+                }
                 self.startDictation()
                 if self.state.isListening {
                     self.permissionPoll?.invalidate()
@@ -111,6 +130,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        // Common modes, so opening the menu bar popover does not pause the poll the popover
+        // is telling the user to wait for.
+        RunLoop.main.add(timer, forMode: .common)
+        permissionPoll = timer
     }
 
     private func showSettings() {

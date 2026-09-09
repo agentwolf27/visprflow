@@ -90,6 +90,10 @@ final class HotkeyMonitor: @unchecked Sendable {
         // monitor that is deallocated without stop() would leave a dangling callback.
         if let tap {
             CGEvent.tapEnable(tap: tap, enable: false)
+            // Disabling stops events; invalidating is what actually tears the port down.
+            // Without it the Mach port and its send right stay alive for the life of the
+            // process, and every trigger change leaks another one.
+            CFMachPortInvalidate(tap)
         }
         if let runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
@@ -102,6 +106,7 @@ final class HotkeyMonitor: @unchecked Sendable {
         watchdog = nil
         if let tap {
             CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
         }
         if let runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
@@ -306,7 +311,7 @@ final class HotkeyMonitor: @unchecked Sendable {
     @MainActor
     private func startWatchdog() {
         watchdog?.invalidate()
-        watchdog = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, let tap = self.tap, !CGEvent.tapIsEnabled(tap: tap) else { return }
                 Log.hotkey.error("Event tap found disabled by the watchdog; re-enabling")
@@ -314,6 +319,11 @@ final class HotkeyMonitor: @unchecked Sendable {
                 self.deliver(self.gesture.withLock { $0.handle(.resynchronise) })
             }
         }
+        // Common modes. A default-mode timer is suspended while a menu is open or a window is
+        // being dragged, which is precisely when a slow main thread gets the tap disabled — so
+        // the default mode would put the watchdog to sleep exactly when it is needed.
+        RunLoop.main.add(timer, forMode: .common)
+        watchdog = timer
     }
 }
 

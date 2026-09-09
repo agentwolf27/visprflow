@@ -18,6 +18,30 @@ actor ParakeetTranscriber: Transcriber {
     private var manager: AsrManager?
     private var loadTask: Task<AsrManager, Error>?
 
+    /// Where the conformer encoder runs.
+    ///
+    /// Injectable so the memory cost of each placement can be measured rather than assumed —
+    /// see `testEncoderPlacementFootprint`. The GPU is faster; it is not free.
+    private let encoderComputeUnits: MLComputeUnits
+
+    init(encoderComputeUnits: MLComputeUnits = ParakeetTranscriber.defaultEncoderComputeUnits) {
+        self.encoderComputeUnits = encoderComputeUnits
+    }
+
+    /// The placement used by the app.
+    ///
+    /// This was `.cpuAndGPU` for a while, on the strength of FluidAudio's benchmark showing the
+    /// conformer encoder about 8% faster there. Measured on this machine, that is wrong in both
+    /// directions at once — `make verify-memory`, best of three on 4.9 s of speech:
+    ///
+    ///     encoder=gpu   1222 MB   306 ms
+    ///     encoder=ane     13 MB   143 ms
+    ///
+    /// The Neural Engine is twice as fast and ninety times lighter, because GPU weights are
+    /// Metal buffers in our own heap while ANE weights are not. A menu bar app that idles at
+    /// 1.2 GB is the exact thing this project was started to replace.
+    nonisolated static let defaultEncoderComputeUnits: MLComputeUnits = .cpuAndNeuralEngine
+
     func isReady() async -> Bool {
         manager != nil
     }
@@ -89,16 +113,14 @@ actor ParakeetTranscriber: Transcriber {
         if let manager { return manager }
         if let loadTask { return try await loadTask.value }
 
+        let units = encoderComputeUnits
         let task = Task<AsrManager, Error> {
             Log.stt.info("Loading Parakeet v3 models (first run downloads roughly 600 MB)")
             let started = ContinuousClock.now
             let models = try await AsrModels.downloadAndLoad(
                 version: .v3,
-                // Placing the conformer encoder on the GPU is roughly 8% faster end to end and
-                // makes no difference to accuracy, per FluidAudio's own benchmark. The default
-                // avoids the GPU only so iOS can keep running in the background, which does not
-                // apply to a Mac menu bar app.
-                encoderComputeUnits: .cpuAndGPU,
+                // See `defaultEncoderComputeUnits`: measured, not assumed.
+                encoderComputeUnits: units,
                 progressHandler: progress.map { handler -> ProgressHandler in
                     { update in handler(update.fractionCompleted) }
                 }

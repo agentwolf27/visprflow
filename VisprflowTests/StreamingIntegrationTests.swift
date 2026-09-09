@@ -155,6 +155,31 @@ final class StreamingIntegrationTests: XCTestCase {
         }
     }
 
+    /// The idle timer only reclaims anything if `unload` genuinely drops the model, so that is
+    /// what this asserts.
+    ///
+    /// It deliberately does not assert a number of megabytes. The streaming model runs on the
+    /// Neural Engine, and ANE weights are not charged to this process's `phys_footprint` — in the
+    /// app they show up as a separate "neural" region. Measuring them from inside the process
+    /// would report a cost near zero and prove the opposite of the truth. The in-process figure
+    /// that does matter, the batch model's, is measured in `MemoryIntegrationTests`.
+    func testUnloadDropsTheModelSoTheIdleTimerReclaimsSomething() async throws {
+        let streaming = StreamingTranscriber()
+        _ = try await streaming.prepare()
+        let loaded = await streaming.isLoaded
+        XCTAssertTrue(loaded, "the model should be resident after prepare")
+
+        await streaming.unload()
+        let stillLoaded = await streaming.isLoaded
+        XCTAssertFalse(stillLoaded, "unload must drop the model, or the idle timer reclaims nothing")
+
+        // And it has to come back on its own, or a dictation after ten idle minutes loses its
+        // live preview permanently.
+        _ = try await streaming.prepare()
+        let reloaded = await streaming.isLoaded
+        XCTAssertTrue(reloaded, "the model must reload after an unload")
+    }
+
     private static func buffer(_ samples: [Float]) -> AVAudioPCMBuffer {
         let format = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,

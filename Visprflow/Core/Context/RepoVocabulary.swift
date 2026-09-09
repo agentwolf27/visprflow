@@ -105,6 +105,9 @@ final class VocabularyCache {
     /// How long a harvest stays fresh when the branch has not changed.
     private let lifetime: TimeInterval = 300
     private var entries: [String: Entry] = [:]
+    /// Repositories with a harvest already running, so rapid dictations in the same project do
+    /// not each spawn their own `git log` and directory walk over the same tree.
+    private var harvesting: Set<String> = []
 
     private func store(_ terms: [String], branch: String?, key: String) {
         entries[key] = Entry(branch: branch, terms: terms, harvestedAt: Date())
@@ -125,9 +128,11 @@ final class VocabularyCache {
         // Return whatever is cached now and refresh for next time, so a cold cache costs a
         // slightly worse first dictation rather than a slower one.
         let stale = entries[key]?.terms ?? []
+        guard harvesting.insert(key).inserted else { return stale }
         Task.detached(priority: .utility) {
             let harvested = RepoVocabulary.harvest(context)
             await MainActor.run { [weak self] in
+                self?.harvesting.remove(key)
                 self?.store(harvested, branch: context.gitBranch, key: key)
             }
         }

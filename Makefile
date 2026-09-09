@@ -4,7 +4,7 @@ DERIVED   := build
 APP       := $(DERIVED)/Build/Products/Debug/Visprflow.app
 XCB       := xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' -derivedDataPath $(DERIVED)
 
-.PHONY: gen regen build test verify-stt verify-streaming verify-subscription run release install clean logs
+.PHONY: gen regen build test verify-stt verify-streaming verify-subscription verify-memory run release install clean logs
 
 ## Generate Visprflow.xcodeproj from project.yml (requires: brew install xcodegen).
 ## --use-cache leaves the project untouched when nothing has changed, which matters because
@@ -39,6 +39,11 @@ verify-subscription: gen
 		grep -E 'SUBSCRIPTION|error:|Test Case .* (passed|failed)|Executed|TEST ' || true
 
 ## Run the streaming tests against audio from `say`. First run downloads the streaming model.
+## Measure what the speech models cost in memory. VISPRFLOW_ENCODER=ane for the other placement.
+verify-memory: gen
+	TEST_RUNNER_VISPRFLOW_STT=1 TEST_RUNNER_VISPRFLOW_ENCODER=$(or $(VISPRFLOW_ENCODER),default) $(XCB) test -only-testing:VisprflowTests/MemoryIntegrationTests 2>&1 | \
+		grep -E 'MEMORY|error:|Test Case .* (passed|failed)|Executed|TEST ' || true
+
 verify-streaming: gen
 	TEST_RUNNER_VISPRFLOW_STT=1 $(XCB) test -only-testing:VisprflowTests/StreamingIntegrationTests 2>&1 | \
 		grep -E 'STREAMING|error:|Test Case .* (passed|failed)|Executed|TEST ' || true
